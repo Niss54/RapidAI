@@ -15,6 +15,10 @@ Project Team Name: Team Syntrix
 
 Repository Link:(https://github.com/Niss54/RapidAI)
 
+## Live Dashboard Snapshot
+
+![Syntrix ICU Early Warning Dashboard](12.png)
+
 
 ## Problem Alignment with Rosetta Code Hackathon Challenge
 
