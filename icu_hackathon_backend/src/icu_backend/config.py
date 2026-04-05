@@ -47,7 +47,7 @@ def load_settings() -> Settings:
         api_key=os.getenv("API_KEY", "").strip(),
         max_history=int(os.getenv("MAX_HISTORY", "60")),
         alert_cooldown_seconds=int(os.getenv("ALERT_COOLDOWN_SECONDS", "8")),
-        forecast_enabled=_as_bool(os.getenv("FORECAST_ENABLED"), default=False),
+        forecast_enabled=_as_bool(os.getenv("FORECAST_ENABLED"), default=True),
         forecast_model_path=PROJECT_ROOT / os.getenv(
             "FORECAST_MODEL_PATH", "src/icu_backend/assets/models/xgb_forecasting.json"
         ),

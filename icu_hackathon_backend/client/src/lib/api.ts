@@ -4,7 +4,9 @@ export type PatientRecord = {
   spo2: number;
   temperature: number;
   bloodPressure: string;
+  riskScore: number;
   riskLevel: string;
+  predictedRiskNext5Minutes: "CRITICAL" | "MODERATE" | "WARNING" | "STABLE";
   lastUpdated: string;
 };
 
@@ -51,11 +53,25 @@ export type LiveKitTokenResponse = {
   wsUrl: string;
 };
 
+export type VoiceLanguage =
+  | "en"
+  | "hi"
+  | "bn"
+  | "ta"
+  | "te"
+  | "mr"
+  | "gu"
+  | "kn"
+  | "ml"
+  | "pa"
+  | "ur"
+  | "or";
+
 export type VoiceQueryResponse = {
   transcript: string;
-  intent: "PATIENT_STATUS" | "ICU_SUMMARY" | "LANGUAGE_SWITCH";
+  intent: "PATIENT_STATUS" | "ICU_SUMMARY" | "LANGUAGE_SWITCH" | "ALERT_LOCK";
   patientId: string | null;
-  language: "en" | "hi";
+  language: VoiceLanguage;
   responseText: string;
   audioBase64: string | null;
 };
@@ -64,8 +80,32 @@ export type TelemetryUpdateResponse = {
   patient: PatientRecord;
   risk: {
     patientId: string;
+    riskScore: number;
     riskLevel: "CRITICAL" | "MODERATE" | "WARNING" | "STABLE";
     reason: string;
+  };
+  decodedVitals?: {
+    heartRate: number;
+    spo2: number;
+    temperature: number;
+    bloodPressure: string;
+    monitorId?: string;
+    source: "hex" | "json";
+  };
+  decoderWarnings?: string[];
+  identityResolution?: {
+    patientId: string;
+    monitorKey: string;
+    providedPatientId: string | null;
+    resolution: "direct-bind" | "anonymous-bind" | "monitor-binding" | "collision-fallback" | "pattern-fallback";
+    collision: boolean;
+    notes: string[];
+  };
+  forecast?: {
+    predictedRiskNext5Minutes: "CRITICAL" | "MODERATE" | "WARNING" | "STABLE";
+    source: "legacy-ml" | "heuristic-fallback" | "disabled";
+    forecastedVitals: number[] | null;
+    warning: string | null;
   };
   alert: {
     text: string;
@@ -128,10 +168,14 @@ export async function fetchIcuTimeline(params?: {
 
 export async function updateTelemetry(payload: {
   patientId: string;
-  heartRate: number;
-  spo2: number;
-  temperature: number;
-  bloodPressure: string;
+  monitorId?: string;
+  heartRate?: number;
+  spo2?: number;
+  temperature?: number;
+  bloodPressure?: string;
+  hexPayload?: string;
+  telemetryHex?: string;
+  hex_payload?: string;
 }): Promise<TelemetryUpdateResponse> {
   return requestJson("/telemetry/update", {
     method: "POST",
@@ -146,7 +190,7 @@ export async function fetchVoiceToken(): Promise<LiveKitTokenResponse> {
 export async function queryVoice(payload: {
   text?: string;
   audioBase64?: string;
-  language?: "en" | "hi";
+  language?: VoiceLanguage;
 }): Promise<VoiceQueryResponse> {
   return requestJson("/voice/query", {
     method: "POST",

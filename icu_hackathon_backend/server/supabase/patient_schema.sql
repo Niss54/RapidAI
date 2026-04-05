@@ -4,9 +4,17 @@ create table if not exists public.patients (
   spo2 numeric,
   temperature numeric,
   blood_pressure text,
+  risk_score numeric default 0,
   risk_level text default 'STABLE',
+  predicted_risk_level text default 'WARNING',
   last_updated timestamptz default timezone('utc', now())
 );
+
+alter table public.patients
+  add column if not exists risk_score numeric default 0;
+
+alter table public.patients
+  add column if not exists predicted_risk_level text default 'WARNING';
 
 create index if not exists idx_patients_risk_level on public.patients(risk_level);
 create index if not exists idx_patients_last_updated on public.patients(last_updated desc);

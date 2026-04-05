@@ -1,0 +1,11 @@
+{
+  "name": "icu-hackathon-stack",
+  "private": true,
+  "scripts": {
+    "start": "npm run start:stack",
+    "start:stack": "node scripts/start-stack.js",
+    "start:node": "npm --prefix server start",
+    "start:flask": "python run.py",
+    "start:client": "npm --prefix client run dev"
+  }
+}

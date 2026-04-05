@@ -1,0 +1,11 @@
+.git
+.gitignore
+**/node_modules
+**/.next
+**/dist
+**/coverage
+**/.DS_Store
+**/*.log
+.env
+client/.env*
+server/.env*

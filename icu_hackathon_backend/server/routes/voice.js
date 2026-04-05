@@ -1,8 +1,20 @@
 const express = require("express");
 const { createVoiceToken } = require("../services/livekitService");
 const { processVoiceQuery } = require("../services/voiceController");
+const { getLanguage, getSupportedLanguages, getAlertMode } = require("../services/sessionState");
 
 const router = express.Router();
+
+router.get("/languages", (_req, res) => {
+  return res.status(200).json({
+    activeLanguage: getLanguage(),
+    supportedLanguages: getSupportedLanguages(),
+  });
+});
+
+router.get("/alert-state", (_req, res) => {
+  return res.status(200).json(getAlertMode());
+});
 
 router.get("/token", async (_req, res) => {
   try {
@@ -17,7 +29,7 @@ router.get("/token", async (_req, res) => {
 
 router.post("/query", async (req, res) => {
   try {
-    const { text, audioBase64, language } = req.body || {};
+    const { text, audioBase64, language, userId, patientId } = req.body || {};
 
     if (!text && !audioBase64) {
       return res.status(400).json({ error: "text or audioBase64 is required" });
@@ -29,6 +41,7 @@ router.post("/query", async (req, res) => {
       text,
       audioBuffer,
       language,
+      userId: userId || patientId || "default-user",
     });
 
     return res.status(200).json(result);

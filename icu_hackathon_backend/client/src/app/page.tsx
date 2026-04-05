@@ -1,514 +1,308 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Room, RoomEvent } from "livekit-client";
-import {
-  IcuSummaryResponse,
-  TimelineEvent,
-  fetchIcuTimeline,
-  fetchHealth,
-  fetchIcuSummary,
-  fetchVoiceToken,
-  queryVoice,
-  toDataUrl,
-  updateTelemetry,
-} from "@/lib/api";
+import Link from "next/link";
+import { useEffect, useMemo, useState } from "react";
+import { fetchHealth, fetchIcuSummary, IcuSummaryResponse } from "@/lib/api";
+import SiteFooter from "@/components/SiteFooter";
+import SiteNavbar from "@/components/SiteNavbar";
 
-type Language = "en" | "hi";
-
-type TelemetryForm = {
-  patientId: string;
-  heartRate: string;
-  spo2: string;
-  temperature: string;
-  bloodPressure: string;
+type Snapshot = {
+  service: string;
+  summary: IcuSummaryResponse["summary"];
 };
 
-const DEFAULT_FORM: TelemetryForm = {
-  patientId: "204",
-  heartRate: "112",
-  spo2: "89",
-  temperature: "99.5",
-  bloodPressure: "124/84",
+const FALLBACK_SUMMARY: IcuSummaryResponse["summary"] = {
+  critical: 0,
+  moderate: 0,
+  warning: 0,
+  stable: 0,
+  total: 0,
 };
 
-function riskClass(level: string): string {
-  const normalized = level.toUpperCase();
-  if (normalized === "CRITICAL") {
-    return "bg-red-100 text-red-700 border-red-300";
-  }
-  if (normalized === "MODERATE") {
-    return "bg-yellow-100 text-yellow-700 border-yellow-300";
-  }
-  if (normalized === "WARNING") {
-    return "bg-orange-100 text-orange-700 border-orange-300";
-  }
-  return "bg-emerald-100 text-emerald-700 border-emerald-300";
-}
+const features = [
+  {
+    title: "Live Patient Monitoring",
+    description:
+      "Heart rate, SpO2, temperature, and blood pressure ko realtime track karke risk signals instantly detect karta hai.",
+    icon: "\u2665",
+    accent: "icon-wrap",
+  },
+  {
+    title: "Voice Clinical Assistant",
+    description:
+      "Doctor ya nurse voice me puch sakte hain: patient status, ICU summary, aur language switch without typing.",
+    icon: "\ud83c\udfa4",
+    accent: "icon-wrap-green",
+  },
+  {
+    title: "Early Risk Alerts",
+    description:
+      "Critical pattern milte hi Rapid AI audio + data broadcast karta hai so team faster intervene kar sake.",
+    icon: "\u26a0",
+    accent: "icon-wrap",
+  },
+  {
+    title: "Bilingual Workflow",
+    description:
+      "English + Hindi ready conversation flow, jisse mixed-language wards me adoption easy hota hai.",
+    icon: "\ud83c\udf10",
+    accent: "icon-wrap-green",
+  },
+  {
+    title: "Historical Timeline",
+    description:
+      "Past telemetry aur alert history visible rehti hai for audit, shift handover, and better decisions.",
+    icon: "\ud83d\udcc8",
+    accent: "icon-wrap",
+  },
+  {
+    title: "Actionable Dashboard",
+    description:
+      "Single glance me critical, moderate, warning, stable distribution ke saath patient cards available.",
+    icon: "\ud83d\udcca",
+    accent: "icon-wrap-green",
+  },
+];
 
-function arrayBufferToBase64(buffer: ArrayBuffer): string {
-  const bytes = new Uint8Array(buffer);
-  const chunkSize = 0x8000;
-  let binary = "";
+const faqs = [
+  {
+    q: "Rapid AI kis tarah patient care improve karta hai?",
+    a: "Rapid AI vital trends ko continuously evaluate karta hai aur high-risk changes par instant alerts deta hai. Isse clinical response time reduce hota hai.",
+  },
+  {
+    q: "Chat aur voice dono me kya puch sakte hain?",
+    a: "Aap patient-specific status, ICU summary, risk level explanation, aur workflow guidance puch sakte hain. Voice mode bedside use ke liye optimized hai.",
+  },
+  {
+    q: "Hindi me command dena possible hai?",
+    a: "Haan, Rapid AI bilingual hai. Language switch command ke through Hindi/English response mode change ho jata hai.",
+  },
+  {
+    q: "Ye website hospital team ko kaise help karti hai?",
+    a: "Rapid AI monitoring, communication, aur alerting ko unify karta hai. Nurse station aur doctor rounds dono me same source of truth milta hai.",
+  },
+];
 
-  for (let i = 0; i < bytes.length; i += chunkSize) {
-    const chunk = bytes.subarray(i, i + chunkSize);
-    binary += String.fromCharCode(...chunk);
-  }
-
-  return btoa(binary);
-}
-
-function playAudio(base64: string) {
-  const audio = new Audio(toDataUrl(base64));
-  void audio.play();
-}
-
-export default function Home() {
-  const [health, setHealth] = useState<{ status: string; service: string } | null>(null);
-  const [summaryData, setSummaryData] = useState<IcuSummaryResponse | null>(null);
-  const [timelineEvents, setTimelineEvents] = useState<TimelineEvent[]>([]);
-  const [form, setForm] = useState<TelemetryForm>(DEFAULT_FORM);
-  const [language, setLanguage] = useState<Language>("en");
-  const [voiceText, setVoiceText] = useState<string>("");
-  const [transcript, setTranscript] = useState<string>("");
-  const [voiceResponse, setVoiceResponse] = useState<string>("");
-  const [lastIntent, setLastIntent] = useState<string>("");
-  const [listening, setListening] = useState<boolean>(false);
-  const [joiningRoom, setJoiningRoom] = useState<boolean>(false);
-  const [roomConnected, setRoomConnected] = useState<boolean>(false);
-  const [error, setError] = useState<string>("");
-
-  const roomRef = useRef<Room | null>(null);
-
-  function timelineBadgeClass(event: TimelineEvent): string {
-    if (event.eventType === "alert") {
-      return event.delivered
-        ? "bg-red-100 text-red-700 border-red-300"
-        : "bg-slate-100 text-slate-700 border-slate-300";
-    }
-
-    const risk = String(event.riskLevel || "STABLE").toUpperCase();
-    if (risk === "CRITICAL") {
-      return "bg-red-100 text-red-700 border-red-300";
-    }
-    if (risk === "MODERATE") {
-      return "bg-yellow-100 text-yellow-700 border-yellow-300";
-    }
-    if (risk === "WARNING") {
-      return "bg-orange-100 text-orange-700 border-orange-300";
-    }
-    return "bg-emerald-100 text-emerald-700 border-emerald-300";
-  }
-
-  const refreshSummary = useCallback(async () => {
-    const [healthData, summary, timeline] = await Promise.all([
-      fetchHealth(),
-      fetchIcuSummary(),
-      fetchIcuTimeline({ limit: 40 }),
-    ]);
-    setHealth(healthData);
-    setSummaryData(summary);
-    setTimelineEvents(timeline.events || []);
-  }, []);
+export default function HomePage() {
+  const [snapshot, setSnapshot] = useState<Snapshot | null>(null);
 
   useEffect(() => {
-    void refreshSummary().catch((err) => {
-      setError(err instanceof Error ? err.message : "Failed to load dashboard");
-    });
+    let alive = true;
 
+    async function refresh() {
+      try {
+        const [health, summary] = await Promise.all([fetchHealth(), fetchIcuSummary()]);
+        if (!alive) {
+          return;
+        }
+        setSnapshot({ service: health.service, summary: summary.summary });
+      } catch {
+        if (!alive) {
+          return;
+        }
+        setSnapshot((prev) =>
+          prev ?? {
+            service: "rapid-ai-server",
+            summary: FALLBACK_SUMMARY,
+          }
+        );
+      }
+    }
+
+    void refresh();
     const timer = setInterval(() => {
-      void refreshSummary().catch(() => undefined);
-    }, 8000);
+      void refresh();
+    }, 10000);
 
     return () => {
+      alive = false;
       clearInterval(timer);
-      if (roomRef.current) {
-        void roomRef.current.disconnect();
-      }
     };
-  }, [refreshSummary]);
-
-  const ensureRoomConnected = useCallback(async () => {
-    if (roomRef.current?.state === "connected") {
-      setRoomConnected(true);
-      return;
-    }
-
-    setJoiningRoom(true);
-    try {
-      const tokenInfo = await fetchVoiceToken();
-      const room = new Room();
-
-      room.on(RoomEvent.DataReceived, (payload) => {
-        try {
-          const text = new TextDecoder().decode(payload);
-          const parsed = JSON.parse(text) as {
-            type?: string;
-            text?: string;
-            language?: Language;
-            audioBase64?: string;
-          };
-
-          if (parsed.text) {
-            setVoiceResponse(parsed.text);
-          }
-          if (parsed.language) {
-            setLanguage(parsed.language);
-          }
-          if (parsed.audioBase64) {
-            playAudio(parsed.audioBase64);
-          }
-        } catch {
-          // Ignore malformed payloads from room data channel.
-        }
-      });
-
-      room.on(RoomEvent.Disconnected, () => {
-        setRoomConnected(false);
-      });
-
-      await room.connect(tokenInfo.wsUrl, tokenInfo.token);
-      roomRef.current = room;
-      setRoomConnected(true);
-    } finally {
-      setJoiningRoom(false);
-    }
   }, []);
 
-  async function handleTelemetrySubmit(event: React.FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    setError("");
-
-    try {
-      const result = await updateTelemetry({
-        patientId: form.patientId,
-        heartRate: Number(form.heartRate),
-        spo2: Number(form.spo2),
-        temperature: Number(form.temperature),
-        bloodPressure: form.bloodPressure,
-      });
-
-      if (result.alert?.audioBase64) {
-        playAudio(result.alert.audioBase64);
-      }
-
-      await refreshSummary();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Telemetry update failed");
-    }
-  }
-
-  async function submitTextCommand() {
-    if (!voiceText.trim()) {
-      return;
-    }
-
-    setError("");
-    try {
-      await ensureRoomConnected().catch(() => {
-        setRoomConnected(false);
-      });
-      const result = await queryVoice({ text: voiceText, language });
-      setTranscript(result.transcript);
-      setLastIntent(result.intent);
-      setVoiceResponse(result.responseText);
-      setLanguage(result.language);
-      if (result.audioBase64) {
-        playAudio(result.audioBase64);
-      }
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Voice command failed");
-    }
-  }
-
-  async function startListening() {
-    setError("");
-    setListening(true);
-
-    try {
-      await ensureRoomConnected().catch(() => {
-        setRoomConnected(false);
-      });
-
-      const room = roomRef.current;
-      if (room) {
-        await room.localParticipant.setMicrophoneEnabled(true);
-      }
-
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      const recorder = new MediaRecorder(stream, { mimeType: "audio/webm" });
-      const chunks: BlobPart[] = [];
-
-      recorder.ondataavailable = (e) => {
-        if (e.data.size > 0) {
-          chunks.push(e.data);
-        }
-      };
-
-      recorder.onstop = async () => {
-        try {
-          const blob = new Blob(chunks, { type: "audio/webm" });
-          const base64 = arrayBufferToBase64(await blob.arrayBuffer());
-          const result = await queryVoice({ audioBase64: base64, language });
-
-          setTranscript(result.transcript);
-          setLastIntent(result.intent);
-          setVoiceResponse(result.responseText);
-          setLanguage(result.language);
-          if (result.audioBase64) {
-            playAudio(result.audioBase64);
-          }
-        } catch (err) {
-          setError(err instanceof Error ? err.message : "Voice recognition failed");
-        } finally {
-          stream.getTracks().forEach((track) => track.stop());
-          if (roomRef.current) {
-            await roomRef.current.localParticipant.setMicrophoneEnabled(false);
-          }
-          setListening(false);
-        }
-      };
-
-      recorder.start();
-      setTimeout(() => {
-        if (recorder.state !== "inactive") {
-          recorder.stop();
-        }
-      }, 4500);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not start microphone");
-      setListening(false);
-    }
-  }
-
-  const patientCards = useMemo(() => summaryData?.patients ?? [], [summaryData]);
+  const summary = useMemo(() => snapshot?.summary ?? FALLBACK_SUMMARY, [snapshot]);
 
   return (
-    <main className="mx-auto flex w-full max-w-7xl flex-col gap-6 px-4 py-8 md:px-8">
-      <section className="glass rounded-3xl p-6 md:p-8">
-        <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-          <div>
-            <p className="font-mono text-xs uppercase tracking-[0.2em] text-cyan-700">ICU Voice Assistant</p>
-            <h1 className="mt-2 text-3xl font-semibold md:text-5xl">Real-Time Early Warning + Voice Control</h1>
-            <p className="mt-2 text-sm text-slate-600 md:text-base">
-              Telemetry Engine to Risk Analyzer to Voice Controller to LiveKit audio channel.
-            </p>
-          </div>
-          <div className="rounded-2xl bg-white/70 p-4 text-sm">
-            <p>
-              Backend: <span className="font-semibold">{health?.service ?? "loading"}</span>
-            </p>
-            <p>
-              Room: <span className="font-semibold">{roomConnected ? "connected" : "disconnected"}</span>
-            </p>
-            <button
-              className="mt-3 rounded-xl bg-indigo-600 px-3 py-2 text-xs font-semibold text-white hover:bg-indigo-700"
-              onClick={() =>
-                void ensureRoomConnected().catch((err) => {
-                  setError(err instanceof Error ? err.message : "Could not join voice room");
-                })
-              }
-              disabled={joiningRoom || roomConnected}
-            >
-              {joiningRoom ? "Joining..." : roomConnected ? "Room Connected" : "Join Voice Room"}
-            </button>
-          </div>
-        </div>
-      </section>
+    <div className="page-shell pb-10">
+      <SiteNavbar />
 
-      {error ? <section className="glass rounded-2xl border border-red-200 bg-red-50/80 p-4 text-sm text-red-700">{error}</section> : null}
+      <main className="container-wrap mt-8 space-y-12">
+        <section className="surface overflow-hidden p-7 md:p-10">
+          <div className="grid items-center gap-8 lg:grid-cols-[1.12fr_0.88fr]">
+            <div className="space-y-6">
+              <div className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/[0.03] px-3 py-1">
+                <span className="pulse-dot" />
+                <span className="text-xs tracking-[0.22em] text-slate-300">RAPID AI LIVE CARE NETWORK</span>
+              </div>
 
-      <section className="grid gap-4 md:grid-cols-4">
-        <article className="glass rounded-2xl p-5">
-          <p className="font-mono text-xs uppercase text-slate-500">Critical</p>
-          <p className="mt-2 text-4xl font-semibold text-red-600">{summaryData?.summary.critical ?? 0}</p>
-        </article>
-        <article className="glass rounded-2xl p-5">
-          <p className="font-mono text-xs uppercase text-slate-500">Moderate</p>
-          <p className="mt-2 text-4xl font-semibold text-yellow-600">{summaryData?.summary.moderate ?? 0}</p>
-        </article>
-        <article className="glass rounded-2xl p-5">
-          <p className="font-mono text-xs uppercase text-slate-500">Warning</p>
-          <p className="mt-2 text-4xl font-semibold text-orange-600">{summaryData?.summary.warning ?? 0}</p>
-        </article>
-        <article className="glass rounded-2xl p-5">
-          <p className="font-mono text-xs uppercase text-slate-500">Stable</p>
-          <p className="mt-2 text-4xl font-semibold text-emerald-600">{summaryData?.summary.stable ?? 0}</p>
-        </article>
-      </section>
+              <h1 className="hero-title">
+                Your ICU Decisions,
+                <span className="text-gradient"> Accelerated.</span>
+              </h1>
 
-      <section className="grid gap-6 lg:grid-cols-[1.1fr_1fr]">
-        <article className="glass rounded-2xl p-5">
-          <h2 className="text-xl font-semibold">Telemetry Update</h2>
-          <form className="mt-4 grid gap-3" onSubmit={(e) => void handleTelemetrySubmit(e)}>
-            <input
-              className="rounded-xl border border-slate-200 bg-white/80 px-3 py-2 text-sm"
-              value={form.patientId}
-              onChange={(e) => setForm((s) => ({ ...s, patientId: e.target.value }))}
-              placeholder="Patient ID"
-            />
-            <div className="grid gap-3 md:grid-cols-3">
-              <input
-                className="rounded-xl border border-slate-200 bg-white/80 px-3 py-2 text-sm"
-                value={form.heartRate}
-                onChange={(e) => setForm((s) => ({ ...s, heartRate: e.target.value }))}
-                placeholder="Heart Rate"
-              />
-              <input
-                className="rounded-xl border border-slate-200 bg-white/80 px-3 py-2 text-sm"
-                value={form.spo2}
-                onChange={(e) => setForm((s) => ({ ...s, spo2: e.target.value }))}
-                placeholder="SpO2"
-              />
-              <input
-                className="rounded-xl border border-slate-200 bg-white/80 px-3 py-2 text-sm"
-                value={form.temperature}
-                onChange={(e) => setForm((s) => ({ ...s, temperature: e.target.value }))}
-                placeholder="Temperature"
-              />
-            </div>
-            <input
-              className="rounded-xl border border-slate-200 bg-white/80 px-3 py-2 text-sm"
-              value={form.bloodPressure}
-              onChange={(e) => setForm((s) => ({ ...s, bloodPressure: e.target.value }))}
-              placeholder="Blood Pressure"
-            />
-            <button className="rounded-xl bg-cyan-600 px-4 py-2 text-sm font-semibold text-white hover:bg-cyan-700" type="submit">
-              Push Telemetry
-            </button>
-          </form>
-        </article>
+              <p className="max-w-2xl text-base leading-7 muted md:text-lg">
+                Rapid AI doctors aur nurses ko patient deterioration early detect karne, voice se quick status lene,
+                aur timely action plan banane me help karta hai - all from one unified interface.
+              </p>
 
-        <article className="glass rounded-2xl p-5">
-          <div className="flex items-center justify-between">
-            <h2 className="text-xl font-semibold">Voice Assistant</h2>
-            <select
-              className="rounded-lg border border-slate-200 bg-white/80 px-2 py-1 text-sm"
-              value={language}
-              onChange={(e) => setLanguage(e.target.value === "hi" ? "hi" : "en")}
-            >
-              <option value="en">English</option>
-              <option value="hi">Hindi</option>
-            </select>
-          </div>
+              <div className="flex flex-wrap gap-3">
+                <Link href="/chat" className="btn-base btn-green px-6 py-3 text-base">
+                  Start Voice Triage
+                </Link>
+                <Link href="/dashboard" className="btn-base btn-main px-6 py-3 text-base">
+                  Open Dashboard
+                </Link>
+              </div>
 
-          <div className="mt-4 grid gap-3">
-            <textarea
-              className="min-h-24 rounded-xl border border-slate-200 bg-white/80 px-3 py-2 text-sm"
-              placeholder="Type: status of patient 204 / give ICU summary / switch language to Hindi"
-              value={voiceText}
-              onChange={(e) => setVoiceText(e.target.value)}
-            />
-            <div className="flex flex-wrap gap-2">
-              <button
-                className="rounded-xl bg-indigo-600 px-3 py-2 text-sm font-semibold text-white hover:bg-indigo-700"
-                onClick={() => void submitTextCommand()}
-                type="button"
-              >
-                Ask by Text
-              </button>
-              <button
-                className="rounded-xl bg-emerald-600 px-3 py-2 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-60"
-                onClick={() => void startListening()}
-                type="button"
-                disabled={listening}
-              >
-                {listening ? "Listening..." : "Start Listening"}
-              </button>
+              <div className="grid gap-3 pt-1 sm:grid-cols-3">
+                <div className="stat-card p-4">
+                  <p className="kicker">Critical</p>
+                  <p className="mt-2 text-3xl font-semibold text-rose-400">{summary.critical}</p>
+                </div>
+                <div className="stat-card p-4">
+                  <p className="kicker">Under Watch</p>
+                  <p className="mt-2 text-3xl font-semibold text-amber-400">{summary.moderate + summary.warning}</p>
+                </div>
+                <div className="stat-card p-4">
+                  <p className="kicker">Stable</p>
+                  <p className="mt-2 text-3xl font-semibold text-emerald-400">{summary.stable}</p>
+                </div>
+              </div>
             </div>
 
-            <div className="rounded-xl bg-white/75 p-3 text-sm">
-              <p>
-                <span className="font-semibold">Transcript:</span> {transcript || "-"}
-              </p>
-              <p className="mt-1">
-                <span className="font-semibold">Intent:</span> {lastIntent || "-"}
-              </p>
-              <p className="mt-1">
-                <span className="font-semibold">Response:</span> {voiceResponse || "-"}
-              </p>
-            </div>
-          </div>
-        </article>
-      </section>
-
-      <section className="glass rounded-2xl p-5">
-        <h2 className="text-xl font-semibold">Patient Grid</h2>
-        <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-          {patientCards.map((patient) => (
-            <article key={patient.patientId} className="rounded-2xl bg-white/80 p-4">
-              <div className="flex items-center justify-between gap-3">
-                <p className="text-lg font-semibold">Patient {patient.patientId}</p>
-                <span className={`rounded-full border px-3 py-1 text-xs font-semibold ${riskClass(patient.riskLevel)}`}>
-                  {patient.riskLevel}
+            <aside className="surface-soft p-5 md:p-6 fade-in-up">
+              <div className="flex items-center justify-between">
+                <p className="kicker">Control Room</p>
+                <span className="rounded-full border border-emerald-400/30 bg-emerald-500/10 px-3 py-1 text-xs font-semibold text-emerald-300">
+                  online
                 </span>
               </div>
-              <p className="mt-3 text-sm text-slate-700">HR: {patient.heartRate}</p>
-              <p className="text-sm text-slate-700">SpO2: {patient.spo2}</p>
-              <p className="text-sm text-slate-700">Temp: {patient.temperature}</p>
-              <p className="text-sm text-slate-700">BP: {patient.bloodPressure}</p>
-              <p className="mt-2 font-mono text-xs text-slate-500">Updated: {new Date(patient.lastUpdated).toLocaleTimeString()}</p>
-            </article>
-          ))}
-        </div>
-      </section>
 
-      <section className="glass rounded-2xl p-5">
-        <div className="flex items-center justify-between gap-3">
-          <h2 className="text-xl font-semibold">Historical Timeline</h2>
-          <button
-            className="rounded-xl bg-slate-800 px-3 py-2 text-xs font-semibold text-white hover:bg-slate-900"
-            type="button"
-            onClick={() =>
-              void refreshSummary().catch((err) => {
-                setError(err instanceof Error ? err.message : "Could not refresh timeline");
-              })
-            }
-          >
-            Refresh Timeline
-          </button>
-        </div>
+              <div className="mt-4 space-y-3 text-sm">
+                <article className="chat-bubble-ai rounded-xl p-3">
+                  <p className="font-semibold text-slate-200">Rapid AI</p>
+                  <p className="mt-1 muted">Patient 204 ka trend unstable hai. SpO2 dip alerts last 15 min me increase hue.</p>
+                </article>
 
-        <div className="mt-4 space-y-3">
-          {timelineEvents.length === 0 ? (
-            <p className="rounded-xl bg-white/70 p-4 text-sm text-slate-600">No timeline events yet.</p>
-          ) : (
-            timelineEvents.map((event) => (
-              <article key={event.id} className="rounded-2xl bg-white/80 p-4">
-                <div className="flex flex-wrap items-center justify-between gap-3">
-                  <p className="text-sm font-semibold text-slate-800">
-                    {event.eventType === "alert" ? "Alert Event" : "Telemetry Event"} - Patient {event.patientId}
-                  </p>
-                  <span className={`rounded-full border px-3 py-1 text-xs font-semibold ${timelineBadgeClass(event)}`}>
-                    {event.eventType === "alert" ? (event.delivered ? "ALERT SENT" : "ALERT FAILED") : String(event.riskLevel || "STABLE")}
-                  </span>
-                </div>
+                <article className="chat-bubble-user rounded-xl p-3">
+                  <p className="font-semibold text-emerald-200">Doctor Query</p>
+                  <p className="mt-1 text-emerald-100">&quot;Give me current risk summary in Hindi.&quot;</p>
+                </article>
 
-                {event.eventType === "telemetry" ? (
-                  <div className="mt-3 grid gap-2 text-sm text-slate-700 md:grid-cols-2 xl:grid-cols-4">
-                    <p>HR: {event.telemetry?.heartRate ?? "-"}</p>
-                    <p>SpO2: {event.telemetry?.spo2 ?? "-"}</p>
-                    <p>Temp: {event.telemetry?.temperature ?? "-"}</p>
-                    <p>BP: {event.telemetry?.bloodPressure ?? "-"}</p>
-                    <p className="md:col-span-2 xl:col-span-4">Reason: {event.reason || "-"}</p>
-                  </div>
-                ) : (
-                  <div className="mt-3 grid gap-2 text-sm text-slate-700">
-                    <p>Message: {event.message || "-"}</p>
-                    <p>Language: {event.language || "-"}</p>
-                    <p>Delivery Reason: {event.deliveryReason || "Delivered"}</p>
-                  </div>
-                )}
+                <article className="chat-bubble-ai rounded-xl p-3">
+                  <p className="font-semibold text-slate-200">Rapid AI Response</p>
+                  <p className="mt-1 muted">&quot;ICU me 1 critical, 2 moderate aur 4 stable patients hain.&quot;</p>
+                </article>
+              </div>
 
-                <p className="mt-3 font-mono text-xs text-slate-500">
-                  {new Date(event.occurredAt).toLocaleString()}
-                </p>
+              <div className="mt-4 rounded-xl border border-white/10 bg-black/30 p-3 text-xs text-slate-400">
+                Active backend: <span className="font-semibold text-slate-200">{snapshot?.service ?? "loading"}</span>
+              </div>
+            </aside>
+          </div>
+        </section>
+
+        <section className="space-y-5">
+          <div className="space-y-2 text-center">
+            <p className="kicker">Core Features</p>
+            <h2 className="text-3xl font-semibold md:text-4xl">What Rapid AI does for every patient workflow</h2>
+          </div>
+
+          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+            {features.map((feature) => (
+              <article key={feature.title} className="feature-card p-5">
+                <div className={`inline-flex ${feature.accent} float-soft`}>{feature.icon}</div>
+                <h3 className="mt-4 text-xl font-semibold text-slate-100">{feature.title}</h3>
+                <p className="mt-2 leading-7 muted">{feature.description}</p>
               </article>
-            ))
-          )}
-        </div>
-      </section>
-    </main>
+            ))}
+          </div>
+        </section>
+
+        <section className="surface p-6 md:p-8">
+          <div className="grid gap-6 lg:grid-cols-[0.95fr_1.05fr]">
+            <div className="space-y-4">
+              <p className="kicker">Chat + Voice Flow</p>
+              <h3 className="text-3xl font-semibold md:text-4xl">From bedside question to response in seconds</h3>
+              <p className="muted leading-7">
+                Aap text ya voice command दे सकते hain. Rapid AI patient vitals, risk pattern aur timeline events combine
+                karke context-aware response deta hai.
+              </p>
+              <div className="grid gap-3">
+                <div className="quick-card p-4">
+                  <p className="text-sm font-semibold text-emerald-300">Voice Prompt</p>
+                  <p className="mt-1 text-sm muted">&quot;Patient 205 ka current oxygen trend batao.&quot;</p>
+                </div>
+                <div className="quick-card p-4">
+                  <p className="text-sm font-semibold text-violet-300">Chat Prompt</p>
+                  <p className="mt-1 text-sm muted">&quot;How can this app help us reduce night shift response delays?&quot;</p>
+                </div>
+                <div className="quick-card p-4">
+                  <p className="text-sm font-semibold text-amber-300">Safety Prompt</p>
+                  <p className="mt-1 text-sm muted">&quot;Show last 20 minutes alerts before I escalate to ICU consultant.&quot;</p>
+                </div>
+              </div>
+            </div>
+
+            <div className="space-y-3">
+              <article className="feature-card p-5">
+                <p className="kicker">Step 01</p>
+                <h4 className="mt-2 text-2xl font-semibold">Speak or Type Situation</h4>
+                <p className="mt-2 muted">Hindi ya English me patient-specific ya unit-level command dena start point hai.</p>
+              </article>
+              <article className="feature-card p-5">
+                <p className="kicker">Step 02</p>
+                <h4 className="mt-2 text-2xl font-semibold">Rapid AI Evaluates Live Context</h4>
+                <p className="mt-2 muted">System telemetry + risk rules + event history combine karke reliable response build karta hai.</p>
+              </article>
+              <article className="feature-card p-5">
+                <p className="kicker">Step 03</p>
+                <h4 className="mt-2 text-2xl font-semibold">Actionable Output</h4>
+                <p className="mt-2 muted">Clear summary, voice feedback, and dashboard insights team ko immediate next step dete hain.</p>
+              </article>
+            </div>
+          </div>
+        </section>
+
+        <section className="surface p-6 md:p-8">
+          <div className="space-y-2">
+            <p className="kicker">FAQ</p>
+            <h3 className="text-3xl font-semibold md:text-4xl">Common questions before deployment</h3>
+          </div>
+
+          <div className="mt-5 space-y-3">
+            {faqs.map((item) => (
+              <details key={item.q} className="faq-row group p-4">
+                <summary className="flex cursor-pointer items-center justify-between gap-4 text-base font-semibold text-slate-100 md:text-lg">
+                  {item.q}
+                  <span className="text-slate-400 transition group-open:rotate-45">+</span>
+                </summary>
+                <p className="mt-3 leading-7 muted">{item.a}</p>
+              </details>
+            ))}
+          </div>
+        </section>
+
+        <section className="surface text-center p-8 md:p-12">
+          <p className="kicker">Ready To Use</p>
+          <h3 className="mt-2 text-4xl font-semibold md:text-5xl">
+            Start using <span className="text-gradient">Rapid AI</span> in your ICU today
+          </h3>
+          <p className="mx-auto mt-4 max-w-2xl muted leading-7">
+            Chat and voice dono modes me clinical team ko faster, clearer aur safer decision support milega.
+          </p>
+          <div className="mt-6 flex flex-wrap justify-center gap-3">
+            <Link href="/chat" className="btn-base btn-green px-6 py-3 text-base">
+              Talk To Rapid AI
+            </Link>
+            <Link href="/dashboard" className="btn-base btn-ghost px-6 py-3 text-base">
+              View Patient Dashboard
+            </Link>
+          </div>
+        </section>
+      </main>
+
+      <SiteFooter />
+    </div>
   );
 }

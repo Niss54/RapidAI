@@ -14,8 +14,9 @@ const ibmPlexMono = IBM_Plex_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "ICU Early Warning Dashboard",
-  description: "Hackathon frontend for ICU telemetry risk monitoring",
+  title: "Rapid AI | ICU Voice + Patient Intelligence",
+  description:
+    "Rapid AI helps care teams monitor patients, detect early risk, and act faster through chat and voice.",
 };
 
 export default function RootLayout({
@@ -28,7 +29,7 @@ export default function RootLayout({
       lang="en"
       className={`${spaceGrotesk.variable} ${ibmPlexMono.variable} h-full antialiased`}
     >
-      <body className="min-h-full flex flex-col">{children}</body>
+      <body className="min-h-full bg-app text-foreground">{children}</body>
     </html>
   );
 }

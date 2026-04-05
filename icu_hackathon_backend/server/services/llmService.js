@@ -1,34 +1,70 @@
 const Groq = require("groq-sdk");
+const { normalizeLanguage, getSupportedLanguages } = require("./sessionState");
+
+const SUPPORTED_LANGUAGES = getSupportedLanguages();
 
 const INTENT_SCHEMA = {
   intent: "PATIENT_STATUS | ICU_SUMMARY | LANGUAGE_SWITCH",
   patientId: "string | null",
-  language: "en | hi | null",
+  language: `${SUPPORTED_LANGUAGES.join(" | ")} | null`,
 };
+
+const LANGUAGE_KEYWORDS = {
+  en: ["english", "angrezi", "अंग्रेजी"],
+  hi: ["hindi", "हिंदी", "हिन्दी"],
+  bn: ["bengali", "bangla", "বাংলা"],
+  ta: ["tamil", "தமிழ்"],
+  te: ["telugu", "తెలుగు"],
+  mr: ["marathi", "मराठी"],
+  gu: ["gujarati", "ગુજરાતી"],
+  kn: ["kannada", "ಕನ್ನಡ"],
+  ml: ["malayalam", "മലയാളം"],
+  pa: ["punjabi", "ਪੰਜਾਬੀ"],
+  ur: ["urdu", "اردو"],
+  or: ["odia", "oriya", "ଓଡ଼ିଆ"],
+};
+
+function detectLanguageFromText(text) {
+  for (const [code, keywords] of Object.entries(LANGUAGE_KEYWORDS)) {
+    if (keywords.some((keyword) => text.includes(keyword))) {
+      return code;
+    }
+  }
+
+  return null;
+}
 
 function detectIntentHeuristic(commandText) {
   const text = String(commandText || "").toLowerCase();
   const wantsLanguageSwitch =
-    /switch|change|language|speak|speak in/.test(text) || /भाषा|बदल/.test(text);
+    /switch|change|language|speak|speak in|talk in|respond in|translate/.test(text) ||
+    /भाषा|बदल|bol|bolo/.test(text);
 
-  if (wantsLanguageSwitch && (/\bhindi\b/.test(text) || /\bhi\b/.test(text) || /हिंदी/.test(text))) {
-    return { intent: "LANGUAGE_SWITCH", patientId: null, language: "hi" };
+  const requestedLanguage = detectLanguageFromText(text);
+
+  if (wantsLanguageSwitch && requestedLanguage) {
+    return {
+      intent: "LANGUAGE_SWITCH",
+      patientId: null,
+      language: normalizeLanguage(requestedLanguage),
+    };
   }
 
-  if (wantsLanguageSwitch && (/\benglish\b/.test(text) || /\ben\b/.test(text) || /अंग्रेजी/.test(text))) {
-    return { intent: "LANGUAGE_SWITCH", patientId: null, language: "en" };
-  }
+  const patientMatch = text.match(/(?:patient|pt|mrn|मरीज|रोगी)\s*([a-z0-9_-]+)/i);
+  const asksPatientDetails =
+    /status|condition|risk|detail|details|summary|report|oxygen|spo2|heart|bp|temperature|vitals|रिपोर्ट|स्थिति|हाल/.test(
+      text
+    );
 
-  const patientMatch = text.match(/patient\s*([a-z0-9_-]+)/i);
-  if (patientMatch && (text.includes("status") || text.includes("condition") || text.includes("risk"))) {
+  if (asksPatientDetails) {
     return {
       intent: "PATIENT_STATUS",
-      patientId: patientMatch[1],
+      patientId: patientMatch ? String(patientMatch[1]) : null,
       language: null,
     };
   }
 
-  if (text.includes("summary") || text.includes("brief") || text.includes("overall")) {
+  if (/icu|ward|overall|all patients|all patient|brief/.test(text)) {
     return { intent: "ICU_SUMMARY", patientId: null, language: null };
   }
 
@@ -54,7 +90,9 @@ async function detectIntent(commandText) {
         {
           role: "system",
           content:
-            "Detect ICU command intent and return strict JSON with fields intent, patientId, language. Use only intents PATIENT_STATUS, ICU_SUMMARY, LANGUAGE_SWITCH.",
+            `Detect ICU command intent and return strict JSON with fields intent, patientId, language. Use only intents PATIENT_STATUS, ICU_SUMMARY, LANGUAGE_SWITCH. Supported language codes: ${SUPPORTED_LANGUAGES.join(
+              ", "
+            )}. For patient detail query without explicit patient id, set patientId as null.`,
         },
         {
           role: "user",
@@ -79,12 +117,12 @@ async function detectIntent(commandText) {
     ? parsed.intent
     : "ICU_SUMMARY";
 
-  const language = parsed.language === "hi" ? "hi" : parsed.language === "en" ? "en" : null;
+  const language = parsed.language ? normalizeLanguage(parsed.language) : null;
 
   return {
     intent,
     patientId: parsed.patientId ? String(parsed.patientId) : null,
-    language,
+    language: language && SUPPORTED_LANGUAGES.includes(language) ? language : null,
   };
 }
 

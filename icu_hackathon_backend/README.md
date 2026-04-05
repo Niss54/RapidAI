@@ -1,31 +1,83 @@
-# Syntrix ICU Voice Copilot
+# Syntrix ICU Early Warning System
+Real-Time Hex Telemetry Intelligence Dashboard for Critical Care Monitoring
+
+Rosetta Code Hackathon – NIT Hamirpur Submission
+Team Name: Syntrix
+
+
+An intelligent real-time ICU monitoring platform designed to decode high-velocity hexadecimal telemetry streams, resolve patient identity conflicts dynamically, and predict clinical deterioration before emergencies occur using an automated risk scoring engine and live monitoring dashboard.
+
+The system transforms fragmented telemetry signals into actionable clinical intelligence through continuous ingestion, predictive evaluation, automated alerting, and stability timeline visualization.
 
 AI-powered platform that helps ICU teams detect critical patient deterioration, trigger multilingual voice responses, and track clinical event history in real time using a voice-first AI orchestration stack.
 
 Project Team Name: Team Syntrix
 
-Repository Link: REPOSITORY_LINK
-Deployment Link: DEPLOYMENT_LINK
+Repository Link:(https://github.com/Niss54/RapidAI)
 
-## ✨ Features
 
-| Feature | Description |
-|---|---|
-| Real-time ICU telemetry ingestion | Accepts live vitals and updates patient state continuously through API ingestion loops. |
-| AI risk decision pipeline | Rule-based risk engine classifies CRITICAL, MODERATE, WARNING, STABLE from incoming vitals. |
-| Voice-enabled doctor assistant | Supports text and audio queries for patient status and ICU summary workflows. |
-| LLM intent orchestration | Uses Groq (Llama) for command intent classification with resilient heuristic fallback. |
-| Multilingual responses | English and Hindi response switching is supported in conversational flow. |
-| STT + TTS voice modules | Sarvam APIs handle speech-to-text and text-to-speech response generation. |
-| Live voice broadcast channel | LiveKit tokens and room data events power real-time audio/data delivery. |
-| ICU operations dashboard | Next.js dashboard provides telemetry push, voice controls, risk cards, and timeline UI. |
-| Historical tracking timeline | Unified timeline surfaces telemetry events and alert events directly from Supabase. |
-| Role-based data access | Supabase RLS policies enforce role-scoped access using JWT app_role claims. |
-| Automated retention cleanup | Daily scheduled cleanup trims historical event tables with configurable retention. |
-| Simulation automation | Python telemetry simulator continuously generates synthetic patient vitals for testing. |
-| Optional analytics module | Legacy Flask module includes identity resolution, triage scoring, and optional forecasting endpoints. |
+## Problem Alignment with Rosetta Code Hackathon Challenge
 
-## 🏗️ Architecture
+This system directly addresses the Rosetta Code Hackathon ICU Early Warning System challenge by:
+
+decoding high-velocity hexadecimal telemetry streams  
+resolving patient identity collisions dynamically  
+computing continuous patient risk scores  
+triggering automated clinical alerts  
+visualizing stability transitions across time  
+supporting predictive deterioration forecasting  
+
+The platform demonstrates a complete telemetry-to-intelligence pipeline suitable for real-time ICU monitoring environments.
+
+## Key Features
+
+• Hexadecimal Telemetry Decoding Pipeline  
+Accepts encoded telemetry streams and converts them into structured patient vital parameters.
+
+• Dynamic Patient Identity Resolution  
+Handles monitor-level identity collisions and assigns deterministic patient mappings during ingestion.
+
+• Real-Time Risk Prediction Engine  
+Continuously evaluates vitals and produces both categorical risk levels and numeric risk scores (0–100).
+
+• Automated Clinical Alert System  
+Detects early deterioration signals and triggers severity-aware alerts before emergencies occur.
+
+• Live ICU Monitoring Dashboard  
+Displays patient vitals, risk states, alerts, and telemetry updates in real time.
+
+• Risk Score Visualization Chart  
+Tracks stability trends over time for proactive clinical intervention.
+
+• Patient Stability Transition Timeline  
+Shows condition progression across Stable → Warning → Critical states.
+
+• Voice-enabled ICU Assistant Layer  
+Supports multilingual doctor queries using LLM-based intent classification.
+
+• Predictive Deterioration Forecasting Module
+Estimates near-future deterioration risk using a forecasting pipeline.
+
+• Continuous Telemetry Simulation Engine  
+Streams synthetic ICU vitals for testing real-time monitoring behavior.
+
+
+## System Workflow
+
+Hex Telemetry Stream
+→ Payload Decoding Engine
+→ Identity Collision Resolver
+→ Vital Parameter Extraction
+→ Risk Score Prediction Engine
+→ Alert Trigger Logic
+→ ICU Monitoring Dashboard
+→ Stability Timeline Visualization
+
+## Architecture Overview
+
+The platform is designed as a modular telemetry intelligence pipeline combining real-time ingestion, predictive scoring, multilingual AI interaction, and event-driven monitoring visualization.
+
+The architecture ensures continuous processing of ICU vitals while enabling early detection of abnormal physiological transitions across multiple patients simultaneously.
 
 ### System View
 
@@ -53,6 +105,42 @@ AI + Voice Layer                Persistence Layer
 	- Sarvam STT/TTS                 - voice_interactions
 	- LiveKit broadcast              - RLS + retention cron
 
+## Risk Scoring Model
+
+The system computes a continuous patient risk score using physiological thresholds:
+
+SpO₂ below safe range  
+Elevated heart rate  
+Temperature anomalies  
+Blood pressure deviations  
+
+Each parameter contributes to a weighted cumulative risk score between 0 and 100.
+
+Risk Categories:
+
+0–30   Stable  
+31–60  Warning  
+61–100 Critical
+
+## Hex Telemetry Processing
+
+Incoming telemetry streams may arrive in encoded hexadecimal format.
+
+The decoding engine:
+
+• parses raw hex payloads  
+• reconstructs fragmented packets  
+• converts bytes into structured vitals  
+• forwards normalized signals into the prediction engine  
+
+This enables compatibility with real ICU telemetry transport protocols.
+
+## Identity Collision Resolution
+
+Telemetry streams from multiple monitoring devices may overlap or conflict.
+
+The system resolves collisions using monitor binding logic and deterministic fallback identifiers, ensuring continuity of patient-level risk tracking across ingestion cycles.
+
 ### Agent and Decision Workflow
 
 Telemetry -> Risk Analyzer -> Patient Upsert -> Critical Alert Decision
@@ -74,7 +162,7 @@ Voice Query (text/audio) -> STT (if audio) -> Intent Detection (Groq/heuristic)
 | GET | /icu/summary | ICU risk distribution + patient snapshot |
 | GET | /icu/timeline | Historical telemetry + alert event timeline |
 
-### Legacy Analytics API (Flask, optional module under src)
+### Advanced Analytics API (Integrated Prediction and Identity Resolution Services)
 
 | Method | Endpoint | Purpose |
 |---|---|---|
@@ -135,7 +223,7 @@ Note: Groq key optional hai, but without it app heuristic fallback pe chalega.
 
 - Node.js 18+
 - npm 9+
-- Python 3.10+ (simulator + optional legacy module)
+- Python 3.10+ (simulator +  module)
 - Supabase CLI
 
 ### 2) Open project in terminal
@@ -209,7 +297,27 @@ Optional verification:
 supabase db query --linked "select table_name from information_schema.tables where table_schema='public' and table_name in ('patients','telemetry_events','alert_events','voice_interactions');"
 ```
 
-### 6) Run all services (recommended 3 terminals)
+### 6) Run Node + Flask together (single command)
+
+From project root:
+
+```powershell
+npm run start:stack
+```
+
+This starts:
+
+- Active Node telemetry backend on port 4000
+- Legacy Flask forecast service on port 8080 (used by forecast bridge)
+
+If Python is not available in PATH, set `PYTHON_CMD` and run again:
+
+```powershell
+$env:PYTHON_CMD = "C:/ICU/.venv/Scripts/python.exe"
+npm run start:stack
+```
+
+### 7) Run all services manually (optional)
 
 Terminal 1 (backend):
 
@@ -234,7 +342,7 @@ App URLs:
 - Frontend: http://localhost:3000
 - Backend: http://localhost:4000
 
-### 7) Quick smoke test commands
+### 8) Quick smoke test commands
 
 ```powershell
 Invoke-RestMethod -Uri http://localhost:4000/health -Method Get
@@ -256,7 +364,7 @@ $q = @{ text='status of patient 101'; language='en' } | ConvertTo-Json
 Invoke-RestMethod -Uri http://localhost:4000/voice/query -Method Post -Body $q -ContentType 'application/json'
 ```
 
-### 8) Optional legacy analytics backend (Flask)
+### 9) Implemented analytics backend (Flask)
 
 ```powershell
 python run.py
@@ -277,12 +385,20 @@ Legacy module env (only if you plan to run src/icu_backend stack):
 - FORECAST_MODEL_PATH
 - FORECAST_SCALER_PATH
 
-### 9) Common setup issues
+### 10) Common setup issues
 
 - Error: "Could not find table public.patients": run Supabase schema step again.
 - Error: LiveKit token or room issue: verify LIVEKIT_API_KEY, LIVEKIT_SECRET, LIVEKIT_WS_URL.
 - Error: no audio response: verify SARVAM_API_KEY and endpoints.
 - Error: intent not detecting well: verify GROQ_API_KEY (otherwise heuristic fallback is used).
+
+## AI Integration
+
+The system combines rule-based clinical thresholds with LLM-assisted intent understanding to support intelligent ICU interaction workflows.
+
+Groq LLM enables multilingual command interpretation for doctor queries.
+
+Forecasting services extend monitoring beyond real-time observation.
 
 ## 🌐 Deployment
 
@@ -427,4 +543,3 @@ SOFTWARE.
 - Supabase for Postgres, RLS, and scheduling ecosystem
 - Next.js, React, and Express open-source communities
 - Flask and scientific Python ecosystem (NumPy, scikit-learn, XGBoost)
-
