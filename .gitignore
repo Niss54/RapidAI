@@ -1,0 +1,22 @@
+# Dependency and build artifacts
+**/node_modules/
+**/.next/
+
+# Python cache and environments
+**/__pycache__/
+**/*.pyc
+**/*.pyo
+**/*.pyd
+.venv/
+**/.venv/
+
+# Local environment files (keep examples)
+**/.env
+**/.env.local
+**/.env.*.local
+
+# Supabase local temp artifacts
+supabase/.temp/
+
+# Logs
+**/*.log

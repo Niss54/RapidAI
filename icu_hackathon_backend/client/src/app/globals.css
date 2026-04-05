@@ -1,0 +1,52 @@
+@import "tailwindcss";
+
+:root {
+  --bg-0: #e8f5f9;
+  --bg-1: #f8fafc;
+  --panel: rgba(255, 255, 255, 0.8);
+  --ink: #102a43;
+  --ink-soft: #486581;
+  --accent: #0ea5a4;
+  --critical: #dc2626;
+  --high: #ea580c;
+  --moderate: #ca8a04;
+  --low: #0f766e;
+}
+
+@theme inline {
+  --font-sans: var(--font-space-grotesk);
+  --font-mono: var(--font-ibm-plex-mono);
+}
+
+body {
+  background:
+    radial-gradient(circle at 15% 10%, #99f6e4 0%, transparent 35%),
+    radial-gradient(circle at 85% 0%, #bfdbfe 0%, transparent 32%),
+    linear-gradient(180deg, var(--bg-0), var(--bg-1));
+  color: var(--ink);
+  font-family: var(--font-space-grotesk), sans-serif;
+}
+
+.glass {
+  background: var(--panel);
+  backdrop-filter: blur(14px);
+  border: 1px solid rgba(16, 42, 67, 0.1);
+  box-shadow: 0 20px 40px rgba(14, 30, 37, 0.08);
+}
+
+.severity-critical {
+  color: var(--critical);
+}
+
+.severity-high {
+  color: var(--high);
+}
+
+.severity-moderate {
+  color: var(--moderate);
+}
+
+.severity-low,
+.severity-negligible {
+  color: var(--low);
+}
