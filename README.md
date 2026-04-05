@@ -13,7 +13,7 @@ AI-powered platform that helps ICU teams detect critical patient deterioration, 
 
 Project Team Name: Team Syntrix
 
-Repository Link:(https://github.com/Niss54/RapidAI)
+Repository Link:(https://github.com/Niss54/RapidAI/tree/master_clean))
 
 
 ## Problem Alignment with Rosetta Code Hackathon Challenge
