@@ -1,4 +1,4 @@
-# Syntrix ICU Early Warning System
+# Rapid AI- ICU Early Warning System
 Real-Time Hex Telemetry Intelligence Dashboard for Critical Care Monitoring
 
 Rosetta Code Hackathon – NIT Hamirpur Submission
