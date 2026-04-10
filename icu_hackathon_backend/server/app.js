@@ -7,6 +7,7 @@ const { initializeForecastService, getForecastServiceStatus } = require("./servi
 const telemetryRoutes = require("./routes/telemetry");
 const voiceRoutes = require("./routes/voice");
 const summaryRoutes = require("./routes/summary");
+const simulatorRoutes = require("./routes/simulator");
 
 const app = express();
 
@@ -24,6 +25,7 @@ app.get("/health", (_req, res) => {
 app.use("/telemetry", telemetryRoutes);
 app.use("/voice", voiceRoutes);
 app.use("/icu", summaryRoutes);
+app.use("/simulator", simulatorRoutes);
 
 const port = Number(process.env.SERVER_PORT || 4000);
 

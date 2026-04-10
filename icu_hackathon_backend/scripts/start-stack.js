@@ -37,11 +37,13 @@ const services = [
     name: "NODE",
     command: IS_WINDOWS ? "npm.cmd" : "npm",
     args: ["--prefix", "server", "start"],
+    shell: IS_WINDOWS,
   },
   {
     name: "FLASK",
     command: PYTHON_COMMAND,
     args: ["run.py"],
+    shell: false,
   },
 ];
 
@@ -96,7 +98,7 @@ function startService(service) {
   const child = spawn(service.command, service.args, {
     cwd: ROOT,
     env: process.env,
-    shell: IS_WINDOWS,
+    shell: service.shell ?? false,
     stdio: ["ignore", "pipe", "pipe"],
   });
 

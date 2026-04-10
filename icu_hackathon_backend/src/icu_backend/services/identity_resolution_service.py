@@ -1,5 +1,6 @@
 import hashlib
 import threading
+import time
 from typing import Any
 
 
@@ -10,8 +11,9 @@ class IdentityResolutionService:
         self._bindings: dict[str, str] = {}
         self._lock = threading.RLock()
 
-    def resolve(self, payload: dict[str, Any]) -> tuple[str, list[str]]:
+    def resolve(self, payload: dict[str, Any]) -> tuple[str, list[str], dict[str, Any]]:
         notes: list[str] = []
+        now_ts = time.time()
 
         direct_id = payload.get("patient_id")
         candidates = [str(c) for c in payload.get("patient_candidates", []) if c is not None]
@@ -21,7 +23,12 @@ class IdentityResolutionService:
             if direct_id is not None:
                 patient_id = str(direct_id)
                 self._bind(monitor_key, patient_id)
-                return patient_id, notes
+                return patient_id, notes, self._mapping_record(
+                    monitor_key,
+                    patient_id,
+                    "direct-bind",
+                    now_ts,
+                )
 
             bound_patient = self._bindings.get(monitor_key)
             if bound_patient:
@@ -30,7 +37,12 @@ class IdentityResolutionService:
                         "Identity conflict resolved using existing monitor binding "
                         f"({monitor_key} -> {bound_patient})"
                     )
-                return bound_patient, notes
+                return bound_patient, notes, self._mapping_record(
+                    monitor_key,
+                    bound_patient,
+                    "monitor-binding",
+                    now_ts,
+                )
 
             if candidates:
                 patient_id = candidates[0]
@@ -40,14 +52,38 @@ class IdentityResolutionService:
                         "Multiple patient candidates supplied; selected first candidate "
                         f"{patient_id}"
                     )
-                return patient_id, notes
+                return patient_id, notes, self._mapping_record(
+                    monitor_key,
+                    patient_id,
+                    "candidate-bind",
+                    now_ts,
+                )
 
             fallback = f"{monitor_key}|{payload.get('bed_id', '')}|{payload.get('source', '')}"
             digest = hashlib.sha1(fallback.encode("utf-8")).hexdigest()[:10]
             patient_id = f"anon_{digest}"
             self._bind(monitor_key, patient_id)
             notes.append("No explicit patient identity found; generated deterministic anonymous ID")
-            return patient_id, notes
+            return patient_id, notes, self._mapping_record(
+                monitor_key,
+                patient_id,
+                "anonymous-bind",
+                now_ts,
+            )
+
+    @staticmethod
+    def _mapping_record(
+        monitor_key: str,
+        patient_id: str,
+        resolution_strategy: str,
+        timestamp: float,
+    ) -> dict[str, Any]:
+        return {
+            "monitor_id": monitor_key,
+            "patient_id": patient_id,
+            "resolution_strategy": resolution_strategy,
+            "timestamp": timestamp,
+        }
 
     def _bind(self, monitor_key: str, patient_id: str) -> None:
         if monitor_key:

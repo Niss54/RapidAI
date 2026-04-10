@@ -4,6 +4,27 @@ from typing import Any
 class TriageService:
     """Rule-based triage enhancement inspired by llm_tools clinical metrics."""
 
+    PRIORITY_BY_SEVERITY = {
+        "urgent": "P1 - Immediate",
+        "high": "P2 - Rapid Evaluation",
+        "moderate": "P3 - Closely Monitor",
+        "negligible": "P4 - Routine Monitoring",
+    }
+
+    ESCALATION_BY_SEVERITY = {
+        "urgent": "Activate critical response immediately and prepare high-acuity intervention.",
+        "high": "Notify ICU physician now and reassess full vitals panel within 5 minutes.",
+        "moderate": "Inform duty nurse and repeat vitals in 15 minutes.",
+        "negligible": "Continue routine monitoring and document current status.",
+    }
+
+    INSIGHT_LABELS = {
+        "shock_index": "Shock Index",
+        "map": "MAP",
+        "sepsis_warning": "Sepsis Warning",
+        "cushings_warning": "Cushing Pattern",
+    }
+
     def analyze(self, vitals: dict[str, Any]) -> dict[str, Any]:
         hr = self._pick(vitals, ["HR"])
         sbp = self._pick(vitals, ["SBP", "ART_SBP"])
@@ -25,10 +46,50 @@ class TriageService:
             if severity_rank[severity] > severity_rank[overall]:
                 overall = severity
 
+        triage_priority = self.PRIORITY_BY_SEVERITY.get(overall, self.PRIORITY_BY_SEVERITY["negligible"])
+        recommended_escalation = self.ESCALATION_BY_SEVERITY.get(
+            overall,
+            self.ESCALATION_BY_SEVERITY["negligible"],
+        )
+
+        risk_explanation_summary = self._risk_explanation_summary(results, overall)
+
         return {
             "overall_severity": overall,
             "insights": results,
+            "triage_priority": triage_priority,
+            "recommended_escalation": recommended_escalation,
+            "risk_explanation_summary": risk_explanation_summary,
         }
+
+    def _risk_explanation_summary(self, insights: dict[str, dict[str, Any]], overall: str) -> str:
+        elevated_signals: list[str] = []
+
+        for key, insight in insights.items():
+            if not isinstance(insight, dict):
+                continue
+
+            if not insight.get("available", False):
+                continue
+
+            severity = str(insight.get("severity", "negligible"))
+            if severity not in {"moderate", "high", "urgent"}:
+                continue
+
+            assessment = str(insight.get("assessment", "")).strip()
+            if not assessment:
+                continue
+
+            label = self.INSIGHT_LABELS.get(key, key.replace("_", " ").title())
+            elevated_signals.append(f"{label}: {assessment}")
+
+        if elevated_signals:
+            return "; ".join(elevated_signals[:3])
+
+        if overall == "negligible":
+            return "No high-risk triage criteria met from available vitals."
+
+        return "Risk indicators are partially available; collect missing vitals and reassess."
 
     @staticmethod
     def _pick(vitals: dict[str, Any], keys: list[str]) -> float | None:

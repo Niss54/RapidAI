@@ -14,6 +14,15 @@ function normalizeLimit(limit, fallback = 60) {
   return Math.max(1, Math.min(200, Math.trunc(parsed)));
 }
 
+function normalizePage(page, fallback = 1) {
+  const parsed = Number(page);
+  if (!Number.isFinite(parsed)) {
+    return fallback;
+  }
+
+  return Math.max(1, Math.trunc(parsed));
+}
+
 function shouldIgnoreEventError(error) {
   const message = String(error?.message || "").toLowerCase();
   return (
@@ -72,6 +81,18 @@ function mapAlertRow(row) {
   };
 }
 
+function mapVoiceRow(row) {
+  return {
+    id: `voice-${row.id}`,
+    patient_id: row.patient_id ? String(row.patient_id) : null,
+    query_text: row.transcript,
+    detected_intent: row.intent,
+    language: row.language,
+    response_summary: row.response_text,
+    timestamp: row.created_at,
+  };
+}
+
 async function listTimeline({ patientId, limit }) {
   if (!isSupabaseConfigured()) {
     return [];
@@ -115,6 +136,61 @@ async function listTimeline({ patientId, limit }) {
   ].sort((a, b) => new Date(b.occurredAt).getTime() - new Date(a.occurredAt).getTime());
 
   return events.slice(0, safeLimit);
+}
+
+async function listVoiceInteractions({ language, intent, patientId, page, limit }) {
+  const safeLimit = normalizeLimit(limit, 10);
+  const safePage = normalizePage(page, 1);
+
+  if (!isSupabaseConfigured()) {
+    return {
+      logs: [],
+      total: 0,
+      page: safePage,
+      limit: safeLimit,
+    };
+  }
+
+  const from = (safePage - 1) * safeLimit;
+  const to = from + safeLimit - 1;
+
+  const supabase = getSupabaseClient();
+  let query = supabase
+    .from(TABLES.voice)
+    .select("id, transcript, intent, language, response_text, created_at", { count: "exact" })
+    .order("created_at", { ascending: false })
+    .range(from, to);
+
+  const normalizedLanguage = String(language || "").trim();
+  const normalizedIntent = String(intent || "").trim();
+  const normalizedPatientId = String(patientId || "").trim();
+
+  if (normalizedLanguage) {
+    query = query.eq("language", normalizedLanguage);
+  }
+
+  if (normalizedIntent) {
+    query = query.eq("intent", normalizedIntent);
+  }
+
+  if (normalizedPatientId) {
+    query = query.eq("patient_id", normalizedPatientId);
+  }
+
+  const { data, error, count } = await query;
+
+  if (error && !shouldIgnoreEventError(error)) {
+    throw new Error(`Supabase voice log fetch failed: ${error.message}`);
+  }
+
+  const logs = (data || []).map(mapVoiceRow);
+
+  return {
+    logs,
+    total: Number.isFinite(count) ? count : logs.length,
+    page: safePage,
+    limit: safeLimit,
+  };
 }
 
 async function logTelemetryEvent({
@@ -178,4 +254,5 @@ module.exports = {
   logVoiceInteraction,
   logAlertEvent,
   listTimeline,
+  listVoiceInteractions,
 };

@@ -31,15 +31,23 @@ function withTimeoutSignal(timeoutMs) {
   };
 }
 
-function parseSystolic(bloodPressure) {
+function parseBloodPressure(bloodPressure) {
   const raw = String(bloodPressure || "").trim();
   const match = raw.match(/^(\d{2,3})\s*\/\s*(\d{2,3})$/);
   if (!match) {
-    return null;
+    return {
+      systolic: null,
+      diastolic: null,
+    };
   }
 
   const systolic = Number(match[1]);
-  return Number.isFinite(systolic) ? systolic : null;
+  const diastolic = Number(match[2]);
+
+  return {
+    systolic: Number.isFinite(systolic) ? systolic : null,
+    diastolic: Number.isFinite(diastolic) ? diastolic : null,
+  };
 }
 
 function toNumber(value) {
@@ -77,7 +85,7 @@ function heuristicForecastLevel({ heartRate, spo2, temperature, bloodPressure })
   const hr = toNumber(heartRate);
   const oxygen = toNumber(spo2);
   const temp = toNumber(temperature);
-  const systolic = parseSystolic(bloodPressure);
+  const { systolic } = parseBloodPressure(bloodPressure);
 
   if ((oxygen !== null && oxygen < 88) || (hr !== null && (hr < 45 || hr > 130)) || (temp !== null && temp > 39.2)) {
     return "CRITICAL";
@@ -160,15 +168,27 @@ async function initializeForecastService() {
 }
 
 async function requestLegacyForecast({ heartRate, spo2, temperature, bloodPressure }) {
-  const systolic = parseSystolic(bloodPressure);
+  const hr = toNumber(heartRate);
+  const oxygen = toNumber(spo2);
+  const temp = toNumber(temperature);
+  const { systolic, diastolic } = parseBloodPressure(bloodPressure);
+
+  const sbp = Number.isFinite(systolic) ? Number(systolic) : Number(hr ?? 0);
+  const dbp = Number.isFinite(diastolic)
+    ? Number(diastolic)
+    : Math.max(40, Math.round((Number.isFinite(sbp) ? sbp : 100) * 0.62));
+  const mapPressure = Math.round((sbp + 2 * dbp) / 3);
+
   const payload = {
     vitals: [[
-      Number(heartRate),
-      Number(spo2),
-      Number.isFinite(systolic) ? Number(systolic) : Number(heartRate),
-      Number(temperature),
+      Number(hr ?? 0),
+      Number(oxygen ?? 0),
+      sbp,
+      dbp,
+      mapPressure,
+      Number(temp ?? 0),
     ]],
-    feature_names: ["HR", "SPO2", "SBP", "TEMP"],
+    feature_names: ["HR", "SPO2", "SBP", "DBP", "MAP", "TEMP"],
   };
 
   const timeout = withTimeoutSignal(REQUEST_TIMEOUT_MS);

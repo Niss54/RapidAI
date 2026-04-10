@@ -19,7 +19,10 @@ def _build_services(settings) -> ServiceContainer:
     return ServiceContainer(
         telemetry_decoder=TelemetryDecoderService(),
         identity_resolver=IdentityResolutionService(),
-        patient_state=PatientStateService(max_history=settings.max_history),
+        patient_state=PatientStateService(
+            max_history=settings.max_history,
+            alert_cooldown_seconds=settings.alert_cooldown_seconds,
+        ),
         risk_engine=RiskEngine(
             max_history=settings.max_history,
             alert_cooldown_seconds=settings.alert_cooldown_seconds,

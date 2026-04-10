@@ -12,7 +12,7 @@ def ingest_telemetry() -> tuple:
         return jsonify({"error": "JSON body must be an object"}), 400
 
     services = get_services()
-    patient_id, conflicts = services.identity_resolver.resolve(payload)
+    patient_id, conflicts, identity_mapping = services.identity_resolver.resolve(payload)
     observations, decode_warnings = services.telemetry_decoder.decode(payload)
 
     if not observations:
@@ -39,6 +39,9 @@ def ingest_telemetry() -> tuple:
         risk_level=risk_level,
         conflicts=conflicts,
         source=source,
+        monitor_id=identity_mapping.get("monitor_id"),
+        resolution_strategy=identity_mapping.get("resolution_strategy"),
+        resolution_timestamp=identity_mapping.get("timestamp"),
     )
 
     return (
@@ -51,6 +54,7 @@ def ingest_telemetry() -> tuple:
                 "risk_level": risk_level,
                 "warnings": decode_warnings,
                 "conflicts": conflicts,
+                "identity_mapping": identity_mapping,
                 "latest_vitals": state["latest_vitals"],
             }
         ),

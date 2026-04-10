@@ -1,7 +1,9 @@
 const SUPPORTED_LANGUAGES = ["en", "hi", "bn", "ta", "te", "mr", "gu", "kn", "ml", "pa", "ur", "or"];
 
 let activeLanguage = "en";
+let languageBySession = new Map();
 let introSpokenBySession = new Set();
+let conversationHistoryBySession = new Map();
 let activeAlert = {
   isActive: false,
   patientId: null,
@@ -33,13 +35,33 @@ function normalizeLanguage(language) {
   return "en";
 }
 
-function getLanguage() {
-  return activeLanguage;
+function getLanguage(sessionId) {
+  if (!sessionId) {
+    return activeLanguage;
+  }
+
+  return languageBySession.get(normalizeSessionKey(sessionId)) || activeLanguage;
 }
 
-function setLanguage(language) {
-  activeLanguage = normalizeLanguage(language);
-  return activeLanguage;
+function setLanguage(language, sessionId) {
+  const normalized = normalizeLanguage(language);
+
+  if (!sessionId) {
+    activeLanguage = normalized;
+    return activeLanguage;
+  }
+
+  const key = normalizeSessionKey(sessionId);
+  languageBySession.set(key, normalized);
+
+  if (languageBySession.size > 1000) {
+    const oldestKey = languageBySession.keys().next().value;
+    if (oldestKey) {
+      languageBySession.delete(oldestKey);
+    }
+  }
+
+  return normalized;
 }
 
 function getSupportedLanguages() {
@@ -84,10 +106,51 @@ function shouldSpeakIntroduction(sessionId) {
 function resetIntroduction(sessionId) {
   if (!sessionId) {
     introSpokenBySession = new Set();
+    languageBySession = new Map();
+    conversationHistoryBySession = new Map();
+    activeLanguage = "en";
     return;
   }
 
-  introSpokenBySession.delete(normalizeSessionKey(sessionId));
+  const key = normalizeSessionKey(sessionId);
+  introSpokenBySession.delete(key);
+  languageBySession.delete(key);
+  conversationHistoryBySession.delete(key);
+}
+
+function appendConversationTurn(sessionId, turn) {
+  const key = normalizeSessionKey(sessionId);
+  const current = conversationHistoryBySession.get(key) || [];
+
+  const normalizedTurn = {
+    role: String(turn?.role || "user").trim() || "user",
+    text: String(turn?.text || "").trim(),
+    intent: turn?.intent ? String(turn.intent) : null,
+    emotion: turn?.emotion ? String(turn.emotion) : null,
+    language: normalizeLanguage(turn?.language || getLanguage(key)),
+    createdAt: new Date().toISOString(),
+  };
+
+  if (!normalizedTurn.text) {
+    return;
+  }
+
+  const next = [...current, normalizedTurn].slice(-20);
+  conversationHistoryBySession.set(key, next);
+
+  if (conversationHistoryBySession.size > 1000) {
+    const oldestKey = conversationHistoryBySession.keys().next().value;
+    if (oldestKey) {
+      conversationHistoryBySession.delete(oldestKey);
+    }
+  }
+}
+
+function getConversationHistory(sessionId, limit = 8) {
+  const key = normalizeSessionKey(sessionId);
+  const history = conversationHistoryBySession.get(key) || [];
+  const safeLimit = Math.max(1, Number(limit) || 8);
+  return history.slice(-safeLimit);
 }
 
 function activateAlertMode({ patientId, message, language, durationMs = 18000 }) {
@@ -139,6 +202,8 @@ module.exports = {
   getSarvamLanguageCandidates,
   shouldSpeakIntroduction,
   resetIntroduction,
+  appendConversationTurn,
+  getConversationHistory,
   activateAlertMode,
   clearAlertMode,
   getAlertMode,

@@ -6,6 +6,6 @@
     "start:stack": "node scripts/start-stack.js",
     "start:node": "npm --prefix server start",
     "start:flask": "python run.py",
-    "start:client": "npm --prefix client run dev"
+    "start:client": "cd client && npm run dev"
   }
 }

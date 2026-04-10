@@ -1,64 +1,51 @@
 "use client";
 
+import Image from "next/image";
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
-import { fetchHealth, fetchIcuSummary, IcuSummaryResponse } from "@/lib/api";
 import SiteFooter from "@/components/SiteFooter";
 import SiteNavbar from "@/components/SiteNavbar";
-
-type Snapshot = {
-  service: string;
-  summary: IcuSummaryResponse["summary"];
-};
-
-const FALLBACK_SUMMARY: IcuSummaryResponse["summary"] = {
-  critical: 0,
-  moderate: 0,
-  warning: 0,
-  stable: 0,
-  total: 0,
-};
+import ScrollStack, { ScrollStackItem } from "@/components/ScrollStack";
 
 const features = [
   {
     title: "Live Patient Monitoring",
     description:
-      "Heart rate, SpO2, temperature, and blood pressure ko realtime track karke risk signals instantly detect karta hai.",
+      "Tracks heart rate, SpO2, temperature, and blood pressure in real time to detect risk signals instantly.",
     icon: "\u2665",
     accent: "icon-wrap",
   },
   {
     title: "Voice Clinical Assistant",
     description:
-      "Doctor ya nurse voice me puch sakte hain: patient status, ICU summary, aur language switch without typing.",
+      "Doctors and nurses can ask by voice for patient status, ICU summary, and language switching without typing.",
     icon: "\ud83c\udfa4",
     accent: "icon-wrap-green",
   },
   {
     title: "Early Risk Alerts",
     description:
-      "Critical pattern milte hi Rapid AI audio + data broadcast karta hai so team faster intervene kar sake.",
+      "As soon as a critical pattern appears, Rapid AI broadcasts audio and data so the team can intervene faster.",
     icon: "\u26a0",
     accent: "icon-wrap",
   },
   {
     title: "Bilingual Workflow",
     description:
-      "English + Hindi ready conversation flow, jisse mixed-language wards me adoption easy hota hai.",
+      "English and Hindi ready conversation flow that improves adoption in mixed-language wards.",
     icon: "\ud83c\udf10",
     accent: "icon-wrap-green",
   },
   {
     title: "Historical Timeline",
     description:
-      "Past telemetry aur alert history visible rehti hai for audit, shift handover, and better decisions.",
+      "Past telemetry and alert history remain visible for audits, shift handovers, and better decisions.",
     icon: "\ud83d\udcc8",
     accent: "icon-wrap",
   },
   {
     title: "Actionable Dashboard",
     description:
-      "Single glance me critical, moderate, warning, stable distribution ke saath patient cards available.",
+      "At a single glance, view patient cards with critical, moderate, warning, and stable distributions.",
     icon: "\ud83d\udcca",
     accent: "icon-wrap-green",
   },
@@ -66,139 +53,58 @@ const features = [
 
 const faqs = [
   {
-    q: "Rapid AI kis tarah patient care improve karta hai?",
-    a: "Rapid AI vital trends ko continuously evaluate karta hai aur high-risk changes par instant alerts deta hai. Isse clinical response time reduce hota hai.",
+    q: "How does Rapid AI improve patient care?",
+    a: "Rapid AI continuously watches heart rate, SpO2, temperature, and blood pressure trends in real time. As soon as a high-risk shift appears, it pushes priority alerts and clear escalation guidance so the team can intervene before the patient deteriorates further.",
+    image: "/assets/faq1.png",
   },
   {
-    q: "Chat aur voice dono me kya puch sakte hain?",
-    a: "Aap patient-specific status, ICU summary, risk level explanation, aur workflow guidance puch sakte hain. Voice mode bedside use ke liye optimized hai.",
+    q: "What can we ask in chat and voice modes?",
+    a: "You can ask for patient-specific vitals, trend windows, ICU-wide summaries, risk reasoning, and action-oriented guidance. Both chat and voice are tuned for bedside rounds, nursing handovers, and fast consultant escalation updates.",
+    image: "/assets/faq2.png",
   },
   {
-    q: "Hindi me command dena possible hai?",
-    a: "Haan, Rapid AI bilingual hai. Language switch command ke through Hindi/English response mode change ho jata hai.",
+    q: "Is it possible to give commands in Hindi?",
+    a: "Yes. Rapid AI supports Hindi and English commands with quick language switching in workflow. This helps mixed-language ICU teams communicate faster and continue clinical discussions in the language each staff member is most comfortable with.",
+    image: "/assets/faq3.png",
   },
   {
-    q: "Ye website hospital team ko kaise help karti hai?",
-    a: "Rapid AI monitoring, communication, aur alerting ko unify karta hai. Nurse station aur doctor rounds dono me same source of truth milta hai.",
+    q: "How does this website help the hospital team?",
+    a: "Rapid AI unifies monitoring, triage communication, and alert context into one operational surface. Nurse stations, doctors, and escalation teams all see the same live timeline and risk state, reducing delays, duplicate calls, and handoff confusion.",
+    image: "/assets/faq4.png",
   },
 ];
 
 export default function HomePage() {
-  const [snapshot, setSnapshot] = useState<Snapshot | null>(null);
-
-  useEffect(() => {
-    let alive = true;
-
-    async function refresh() {
-      try {
-        const [health, summary] = await Promise.all([fetchHealth(), fetchIcuSummary()]);
-        if (!alive) {
-          return;
-        }
-        setSnapshot({ service: health.service, summary: summary.summary });
-      } catch {
-        if (!alive) {
-          return;
-        }
-        setSnapshot((prev) =>
-          prev ?? {
-            service: "rapid-ai-server",
-            summary: FALLBACK_SUMMARY,
-          }
-        );
-      }
-    }
-
-    void refresh();
-    const timer = setInterval(() => {
-      void refresh();
-    }, 10000);
-
-    return () => {
-      alive = false;
-      clearInterval(timer);
-    };
-  }, []);
-
-  const summary = useMemo(() => snapshot?.summary ?? FALLBACK_SUMMARY, [snapshot]);
-
   return (
     <div className="page-shell pb-10">
       <SiteNavbar />
 
       <main className="container-wrap mt-8 space-y-12">
-        <section className="surface overflow-hidden p-7 md:p-10">
-          <div className="grid items-center gap-8 lg:grid-cols-[1.12fr_0.88fr]">
-            <div className="space-y-6">
-              <div className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/[0.03] px-3 py-1">
-                <span className="pulse-dot" />
-                <span className="text-xs tracking-[0.22em] text-slate-300">RAPID AI LIVE CARE NETWORK</span>
-              </div>
-
-              <h1 className="hero-title">
-                Your ICU Decisions,
-                <span className="text-gradient"> Accelerated.</span>
-              </h1>
-
-              <p className="max-w-2xl text-base leading-7 muted md:text-lg">
-                Rapid AI doctors aur nurses ko patient deterioration early detect karne, voice se quick status lene,
-                aur timely action plan banane me help karta hai - all from one unified interface.
-              </p>
-
-              <div className="flex flex-wrap gap-3">
-                <Link href="/chat" className="btn-base btn-green px-6 py-3 text-base">
-                  Start Voice Triage
-                </Link>
-                <Link href="/dashboard" className="btn-base btn-main px-6 py-3 text-base">
-                  Open Dashboard
-                </Link>
-              </div>
-
-              <div className="grid gap-3 pt-1 sm:grid-cols-3">
-                <div className="stat-card p-4">
-                  <p className="kicker">Critical</p>
-                  <p className="mt-2 text-3xl font-semibold text-rose-400">{summary.critical}</p>
-                </div>
-                <div className="stat-card p-4">
-                  <p className="kicker">Under Watch</p>
-                  <p className="mt-2 text-3xl font-semibold text-amber-400">{summary.moderate + summary.warning}</p>
-                </div>
-                <div className="stat-card p-4">
-                  <p className="kicker">Stable</p>
-                  <p className="mt-2 text-3xl font-semibold text-emerald-400">{summary.stable}</p>
-                </div>
-              </div>
+        <section className="overflow-visible px-3 py-4 md:px-6 md:py-7">
+          <div className="max-w-5xl space-y-7">
+            <div className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/[0.03] px-3 py-1">
+              <span className="pulse-dot" />
+              <span className="text-xs tracking-[0.22em] text-slate-300">RAPID AI LIVE CARE NETWORK</span>
             </div>
 
-            <aside className="surface-soft p-5 md:p-6 fade-in-up">
-              <div className="flex items-center justify-between">
-                <p className="kicker">Control Room</p>
-                <span className="rounded-full border border-emerald-400/30 bg-emerald-500/10 px-3 py-1 text-xs font-semibold text-emerald-300">
-                  online
-                </span>
-              </div>
+            <h1 className="hero-title">
+              Your ICU Decisions,
+              <span className="text-gradient"> Accelerated.</span>
+            </h1>
 
-              <div className="mt-4 space-y-3 text-sm">
-                <article className="chat-bubble-ai rounded-xl p-3">
-                  <p className="font-semibold text-slate-200">Rapid AI</p>
-                  <p className="mt-1 muted">Patient 204 ka trend unstable hai. SpO2 dip alerts last 15 min me increase hue.</p>
-                </article>
+            <p className="max-w-4xl text-lg leading-8 muted md:text-2xl md:leading-10">
+              Rapid AI helps doctors and nurses detect patient deterioration early, retrieve status quickly by voice,
+              and create timely action plans from one unified interface.
+            </p>
 
-                <article className="chat-bubble-user rounded-xl p-3">
-                  <p className="font-semibold text-emerald-200">Doctor Query</p>
-                  <p className="mt-1 text-emerald-100">&quot;Give me current risk summary in Hindi.&quot;</p>
-                </article>
-
-                <article className="chat-bubble-ai rounded-xl p-3">
-                  <p className="font-semibold text-slate-200">Rapid AI Response</p>
-                  <p className="mt-1 muted">&quot;ICU me 1 critical, 2 moderate aur 4 stable patients hain.&quot;</p>
-                </article>
-              </div>
-
-              <div className="mt-4 rounded-xl border border-white/10 bg-black/30 p-3 text-xs text-slate-400">
-                Active backend: <span className="font-semibold text-slate-200">{snapshot?.service ?? "loading"}</span>
-              </div>
-            </aside>
+            <div className="flex flex-wrap gap-4">
+              <Link href="/chat" className="btn-base btn-green px-7 py-3.5 text-lg md:px-8">
+                Start Voice Triage
+              </Link>
+              <Link href="/dashboard" className="btn-base btn-main px-7 py-3.5 text-lg md:px-8">
+                Open Dashboard
+              </Link>
+            </div>
           </div>
         </section>
 
@@ -225,13 +131,13 @@ export default function HomePage() {
               <p className="kicker">Chat + Voice Flow</p>
               <h3 className="text-3xl font-semibold md:text-4xl">From bedside question to response in seconds</h3>
               <p className="muted leading-7">
-                Aap text ya voice command दे सकते hain. Rapid AI patient vitals, risk pattern aur timeline events combine
-                karke context-aware response deta hai.
+                You can use text or voice commands. Rapid AI combines patient vitals, risk patterns, and timeline events
+                to generate context-aware responses.
               </p>
               <div className="grid gap-3">
                 <div className="quick-card p-4">
                   <p className="text-sm font-semibold text-emerald-300">Voice Prompt</p>
-                  <p className="mt-1 text-sm muted">&quot;Patient 205 ka current oxygen trend batao.&quot;</p>
+                  <p className="mt-1 text-sm muted">&quot;Show me the current oxygen trend for patient 205.&quot;</p>
                 </div>
                 <div className="quick-card p-4">
                   <p className="text-sm font-semibold text-violet-300">Chat Prompt</p>
@@ -248,17 +154,17 @@ export default function HomePage() {
               <article className="feature-card p-5">
                 <p className="kicker">Step 01</p>
                 <h4 className="mt-2 text-2xl font-semibold">Speak or Type Situation</h4>
-                <p className="mt-2 muted">Hindi ya English me patient-specific ya unit-level command dena start point hai.</p>
+                <p className="mt-2 muted">Start by giving a patient-specific or unit-level command in Hindi or English.</p>
               </article>
               <article className="feature-card p-5">
                 <p className="kicker">Step 02</p>
                 <h4 className="mt-2 text-2xl font-semibold">Rapid AI Evaluates Live Context</h4>
-                <p className="mt-2 muted">System telemetry + risk rules + event history combine karke reliable response build karta hai.</p>
+                <p className="mt-2 muted">The system combines telemetry, risk rules, and event history to build a reliable response.</p>
               </article>
               <article className="feature-card p-5">
                 <p className="kicker">Step 03</p>
                 <h4 className="mt-2 text-2xl font-semibold">Actionable Output</h4>
-                <p className="mt-2 muted">Clear summary, voice feedback, and dashboard insights team ko immediate next step dete hain.</p>
+                <p className="mt-2 muted">Clear summaries, voice feedback, and dashboard insights provide immediate next steps for the team.</p>
               </article>
             </div>
           </div>
@@ -270,16 +176,41 @@ export default function HomePage() {
             <h3 className="text-3xl font-semibold md:text-4xl">Common questions before deployment</h3>
           </div>
 
-          <div className="mt-5 space-y-3">
-            {faqs.map((item) => (
-              <details key={item.q} className="faq-row group p-4">
-                <summary className="flex cursor-pointer items-center justify-between gap-4 text-base font-semibold text-slate-100 md:text-lg">
-                  {item.q}
-                  <span className="text-slate-400 transition group-open:rotate-45">+</span>
-                </summary>
-                <p className="mt-3 leading-7 muted">{item.a}</p>
-              </details>
-            ))}
+          <div className="mt-5 faq-stack-shell">
+            <ScrollStack
+              className="faq-stack-scroll"
+              itemDistance={120}
+              itemScale={0.035}
+              itemStackDistance={26}
+              stackPosition="18%"
+              scaleEndPosition="12%"
+              baseScale={0.9}
+              scaleDuration={0.35}
+              blurAmount={0.2}
+              useWindowScroll
+            >
+              {faqs.map((item, index) => (
+                <ScrollStackItem key={item.q} itemClassName="faq-stack-card">
+                  <article className="faq-stack-content">
+                    <div className="faq-stack-copy">
+                      <p className="faq-stack-step">FAQ {String(index + 1).padStart(2, "0")}</p>
+                      <h4 className="faq-stack-question">{item.q}</h4>
+                      <p className="faq-stack-answer">{item.a}</p>
+                    </div>
+
+                    <div className="faq-stack-media">
+                      <Image
+                        src={item.image}
+                        alt={`FAQ visual ${index + 1}`}
+                        width={920}
+                        height={620}
+                        className="faq-stack-image"
+                      />
+                    </div>
+                  </article>
+                </ScrollStackItem>
+              ))}
+            </ScrollStack>
           </div>
         </section>
 
@@ -289,7 +220,7 @@ export default function HomePage() {
             Start using <span className="text-gradient">Rapid AI</span> in your ICU today
           </h3>
           <p className="mx-auto mt-4 max-w-2xl muted leading-7">
-            Chat and voice dono modes me clinical team ko faster, clearer aur safer decision support milega.
+            In both chat and voice modes, clinical teams receive faster, clearer, and safer decision support.
           </p>
           <div className="mt-6 flex flex-wrap justify-center gap-3">
             <Link href="/chat" className="btn-base btn-green px-6 py-3 text-base">
