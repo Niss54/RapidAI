@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "nodemon app.js",
     "start": "node app.js",
-    "test": "node --test \"tests/**/*.test.js\""
+    "test": "node --test \"tests/**/*.test.js\"",
+    "create:api-key": "node tools/generateApiKey.js"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.57.4",
@@ -16,7 +17,9 @@
     "express": "^4.21.2",
     "form-data": "^4.0.4",
     "groq-sdk": "^1.1.2",
-    "livekit-server-sdk": "^2.13.3"
+    "livekit-server-sdk": "^2.13.3",
+    "serialport": "^13.0.0",
+    "simple-hl7": "^3.3.0"
   },
   "devDependencies": {
     "nodemon": "^3.1.10"

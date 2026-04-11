@@ -580,6 +580,11 @@ export default function PatientDetailPage() {
                       <p>Alert Type: {event.alertType || "-"}</p>
                       <p>Message: {event.message || "-"}</p>
                       <p>Language: {event.language || "-"}</p>
+                      <p>
+                        delivery_channels: {event.deliveryChannels && event.deliveryChannels.length > 0
+                          ? event.deliveryChannels.join(", ")
+                          : "-"}
+                      </p>
                     </div>
                   )}
 

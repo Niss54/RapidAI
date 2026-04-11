@@ -32,6 +32,9 @@ export default function SiteFooter() {
           <Link href="/dashboard" className="hover:text-white">
             Dashboard
           </Link>
+          <Link href="/docs/api" className="hover:text-white">
+            Docs
+          </Link>
         </div>
       </div>
     </footer>

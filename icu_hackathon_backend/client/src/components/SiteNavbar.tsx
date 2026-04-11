@@ -10,10 +10,13 @@ const navItems = [
   { href: "/", label: "Home" },
   { href: "/chat", label: "Patient Chat" },
   { href: "/dashboard", label: "Dashboard" },
+  { href: "/docs/api", label: "Docs" },
 ];
 
 const rapidLogoSrc = "/assets/rapid.png?v=20260409";
 const TELEMETRY_MODE_REFRESH_MS = 5000;
+const API_ACCESS_ROUTE = "/dashboard/api-access";
+const API_ACCESS_USER_STORAGE_KEY = "rapidai-api-access-user-id";
 
 type TelemetryMode = "live" | "simulated";
 
@@ -38,13 +41,53 @@ function formatLastUpdated(value: string | null | undefined): string {
   });
 }
 
+function KeyIcon() {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      aria-hidden="true"
+      focusable="false"
+      className="h-4 w-4"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <path d="M14.5 9.5a4.5 4.5 0 1 1-8.14 2.73A4.5 4.5 0 0 1 14.5 9.5Z" />
+      <path d="M14 12h8" />
+      <path d="M18 12v3" />
+      <path d="M21 12v2" />
+    </svg>
+  );
+}
+
 export default function SiteNavbar({ lastUpdatedAt = null }: SiteNavbarProps) {
   const pathname = usePathname();
   const lastUpdatedLabel = formatLastUpdated(lastUpdatedAt);
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [telemetryMode, setTelemetryMode] = useState<TelemetryMode>("live");
 
   const shouldShowTelemetryModeBadge =
     pathname === "/dashboard" || pathname.startsWith("/patients/");
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    const syncAuthState = () => {
+      const storedUserId = window.localStorage.getItem(API_ACCESS_USER_STORAGE_KEY);
+      setIsAuthenticated(String(storedUserId || "").trim().length > 0);
+    };
+
+    syncAuthState();
+    window.addEventListener("storage", syncAuthState);
+
+    return () => {
+      window.removeEventListener("storage", syncAuthState);
+    };
+  }, [pathname]);
 
   useEffect(() => {
     if (!shouldShowTelemetryModeBadge) {
@@ -115,6 +158,20 @@ export default function SiteNavbar({ lastUpdatedAt = null }: SiteNavbarProps) {
                 </Link>
               );
             })}
+
+            {isAuthenticated ? (
+              <Link
+                href={API_ACCESS_ROUTE}
+                className={`rounded-full px-4 py-2 text-sm nav-link ${
+                  pathname === API_ACCESS_ROUTE ? "nav-link-active" : ""
+                }`}
+              >
+                <span className="inline-flex items-center gap-1.5">
+                  <KeyIcon />
+                  <span>API</span>
+                </span>
+              </Link>
+            ) : null}
           </nav>
 
           <div className="flex items-center gap-2">

@@ -47,7 +47,7 @@ def create_app() -> Flask:
 
     @app.before_request
     def _authenticate() -> None:
-        enforce_api_key(request, settings.api_key, settings.api_prefix)
+        enforce_api_key(request, settings.api_prefix)
 
     @app.errorhandler(HTTPException)
     def _handle_http_error(error: HTTPException):

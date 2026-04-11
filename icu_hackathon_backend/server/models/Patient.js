@@ -4,6 +4,28 @@ const { heuristicForecastLevel } = require("../services/forecastService");
 
 const TABLE = "patients";
 const inMemoryPatients = new Map();
+const inMemoryTelemetrySources = new Map();
+
+function normalizeTelemetrySource(value) {
+  const normalized = String(value || "").trim().toLowerCase();
+  if (!normalized) {
+    return "";
+  }
+
+  if (normalized.includes("hl7")) {
+    return "hl7";
+  }
+
+  if (normalized.includes("serial") || normalized.includes("com") || normalized.includes("tty")) {
+    return "serial";
+  }
+
+  if (normalized.includes("simulator") || normalized.startsWith("sim-")) {
+    return "simulator";
+  }
+
+  return "";
+}
 
 function listInMemoryPatients() {
   return Array.from(inMemoryPatients.values()).sort(
@@ -51,10 +73,17 @@ function toApiModel(row) {
     return null;
   }
 
+  const patientId = row.patientId || row.patient_id;
   const heartRate = row.heartRate ?? row.heart_rate;
   const spo2 = row.spo2;
   const temperature = row.temperature;
   const bloodPressure = row.bloodPressure || row.blood_pressure;
+  const telemetrySource = normalizeTelemetrySource(
+    row.telemetrySource ?? row.telemetry_source ?? row.source ?? inMemoryTelemetrySources.get(String(patientId))
+  );
+  if (telemetrySource) {
+    inMemoryTelemetrySources.set(String(patientId), telemetrySource);
+  }
   const assessment = computeRiskAssessment({ heartRate, spo2, temperature, bloodPressure });
   const riskScore = toClampedRiskScore(row.riskScore ?? row.risk_score, assessment.riskScore);
   const predictedFallback = heuristicForecastLevel({ heartRate, spo2, temperature, bloodPressure });
@@ -64,7 +93,7 @@ function toApiModel(row) {
   );
 
   return {
-    patientId: row.patientId || row.patient_id,
+    patientId,
     heartRate,
     spo2,
     temperature,
@@ -72,6 +101,7 @@ function toApiModel(row) {
     riskScore,
     riskLevel: row.riskLevel || row.risk_level || assessment.riskLevel,
     predictedRiskNext5Minutes,
+    telemetrySource: telemetrySource || undefined,
     lastUpdated: row.lastUpdated || row.last_updated,
   };
 }
@@ -98,9 +128,16 @@ async function upsertPatient(patient) {
     ),
     last_updated: new Date().toISOString(),
   };
+  const telemetrySource = normalizeTelemetrySource(patient.telemetrySource);
+  if (telemetrySource) {
+    inMemoryTelemetrySources.set(payload.patientId, telemetrySource);
+  }
 
   if (!isSupabaseConfigured()) {
-    const apiModel = toApiModel(payload);
+    const apiModel = toApiModel({
+      ...payload,
+      telemetrySource,
+    });
     inMemoryPatients.set(apiModel.patientId, apiModel);
     return apiModel;
   }
@@ -166,7 +203,10 @@ async function upsertPatient(patient) {
 
   if (error) {
     if (shouldFallbackToMemory(error)) {
-      const apiModel = toApiModel(payload);
+      const apiModel = toApiModel({
+        ...payload,
+        telemetrySource,
+      });
       inMemoryPatients.set(apiModel.patientId, apiModel);
       return apiModel;
     }

@@ -1,6 +1,7 @@
 const DEFAULT_PATIENT_IDS = ["201", "202", "203", "204", "205"];
 const DEFAULT_INTERVAL_MS = 5000;
 const MIN_INTERVAL_MS = 1000;
+const { logIngestionError } = require("./ingestionLogger");
 
 let simulationTimer = null;
 let running = false;
@@ -50,6 +51,7 @@ function buildTelemetryPayload() {
   return {
     patientId,
     monitorId: `sim-${patientId}`,
+    source: "simulator",
     heartRate: randomInt(70, 140),
     spo2: randomInt(82, 99),
     temperature: randomFloat(97.0, 103.0),
@@ -78,6 +80,10 @@ async function tick() {
     lastError = null;
   } catch (error) {
     lastError = error instanceof Error ? error.message : "Simulator tick failed";
+    logIngestionError("simulator", "tick", error, {
+      targetUrl: resolveTargetUrl(),
+      intervalMs: parseIntervalMs(),
+    });
   }
 }
 

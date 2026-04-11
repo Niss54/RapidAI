@@ -5,6 +5,52 @@ const readline = require("node:readline");
 
 const ROOT = path.resolve(__dirname, "..");
 const IS_WINDOWS = process.platform === "win32";
+const DEFAULT_SERVER_PORT = 4000;
+
+function parsePositivePort(value) {
+  const parsed = Number(String(value || "").trim());
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    return null;
+  }
+
+  return Math.round(parsed);
+}
+
+function resolveNodeServerPort() {
+  const envPort = parsePositivePort(process.env.SERVER_PORT);
+  if (envPort) {
+    return envPort;
+  }
+
+  const envPath = path.join(ROOT, ".env");
+  if (!fs.existsSync(envPath)) {
+    return DEFAULT_SERVER_PORT;
+  }
+
+  try {
+    const envContent = fs.readFileSync(envPath, "utf8");
+    const lines = envContent.split(/\r?\n/);
+
+    for (const line of lines) {
+      const trimmed = line.trim();
+      if (!trimmed || trimmed.startsWith("#")) {
+        continue;
+      }
+
+      const match = trimmed.match(/^SERVER_PORT\s*=\s*(.+)$/);
+      if (!match) {
+        continue;
+      }
+
+      const parsed = parsePositivePort(match[1].replace(/^['\"]|['\"]$/g, ""));
+      return parsed || DEFAULT_SERVER_PORT;
+    }
+  } catch {
+    return DEFAULT_SERVER_PORT;
+  }
+
+  return DEFAULT_SERVER_PORT;
+}
 
 function resolvePythonCommand() {
   const venvRelative = IS_WINDOWS ? path.join("Scripts", "python.exe") : path.join("bin", "python");
@@ -31,6 +77,8 @@ function resolvePythonCommand() {
 }
 
 const PYTHON_COMMAND = resolvePythonCommand();
+const NODE_SERVER_PORT = resolveNodeServerPort();
+const NODE_SERVER_URL = `http://localhost:${NODE_SERVER_PORT}`;
 
 const services = [
   {
@@ -133,6 +181,7 @@ function startService(service) {
 
 console.log("[STACK] Starting ICU stack (Node API + Flask forecast service)...");
 console.log("[STACK] Press Ctrl+C to stop all services.");
+console.log(`[STACK] Node API expected at ${NODE_SERVER_URL} (from SERVER_PORT/.env).`);
 console.log(`[STACK] Python command: ${PYTHON_COMMAND}`);
 
 for (const service of services) {

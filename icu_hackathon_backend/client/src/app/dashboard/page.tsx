@@ -13,6 +13,7 @@ import {
   ForecastProjectionRecord,
   ForecastSourceSummary,
   IcuSummaryResponse,
+  TelemetryUpdateResponse,
   TimelineEvent,
   updateTelemetry,
 } from "@/lib/api";
@@ -27,6 +28,7 @@ import VoiceAssistantPanel from "@/components/VoiceAssistantPanel";
 import VoiceServiceStatusPanel from "@/components/VoiceServiceStatusPanel";
 import HexDecoderPanel from "@/components/HexDecoderPanel";
 import IdentityCollisionPanel from "@/components/IdentityCollisionPanel";
+import IntegrationStatusPanel from "@/components/IntegrationStatusPanel";
 import AlertsTimelinePanel from "@/components/AlertsTimelinePanel";
 import ForecastWidget from "@/components/ForecastWidget";
 import TelemetryTimelineChart from "@/components/TelemetryTimelineChart";
@@ -49,6 +51,14 @@ type TelemetryForm = {
 };
 
 type RiskHistoryByPatient = Record<string, number[]>;
+
+type EscalationChannels = NonNullable<TelemetryUpdateResponse["escalationChannels"]>;
+
+type LastTelemetryDiagnostics = {
+  riskLevel: TelemetryUpdateResponse["risk"]["riskLevel"];
+  channels: EscalationChannels | null;
+  capturedAt: string;
+};
 
 function parsePatientIdsCsv(value: string): string[] {
   return String(value || "")
@@ -112,6 +122,7 @@ type DashboardSectionId =
   | "voiceAssistant"
   | "voiceLogs"
   | "voiceStatus"
+  | "integrationStatus"
   | "endpointCoverage"
   | "telemetryDebug"
   | "modelEvaluation";
@@ -131,6 +142,7 @@ const DASHBOARD_SECTION_TABS: Array<{ id: DashboardSectionId; label: string }> =
   { id: "voiceAssistant", label: "Voice Assistant" },
   { id: "voiceLogs", label: "Voice Logs" },
   { id: "voiceStatus", label: "Voice Service Status" },
+  { id: "integrationStatus", label: "Integration Status" },
   { id: "endpointCoverage", label: "Endpoint Coverage" },
   { id: "telemetryDebug", label: "Telemetry Debug" },
   { id: "modelEvaluation", label: "Model Evaluation" },
@@ -148,6 +160,42 @@ function badgeClass(level: string): string {
     return "border-orange-500/40 bg-orange-500/15 text-orange-300";
   }
   return "border-emerald-500/40 bg-emerald-500/15 text-emerald-300";
+}
+
+function toTelemetrySourceLabel(value: unknown): "HL7" | "Serial" | "Simulator" | "Unknown" {
+  const normalized = String(value || "").trim().toLowerCase();
+
+  if (normalized.includes("hl7")) {
+    return "HL7";
+  }
+
+  if (normalized.includes("serial") || normalized.includes("com") || normalized.includes("tty")) {
+    return "Serial";
+  }
+
+  if (normalized.includes("simulator") || normalized.startsWith("sim")) {
+    return "Simulator";
+  }
+
+  return "Unknown";
+}
+
+function telemetrySourceBadgeClass(value: unknown): string {
+  const label = toTelemetrySourceLabel(value);
+
+  if (label === "HL7") {
+    return "border-cyan-500/40 bg-cyan-500/15 text-cyan-300";
+  }
+
+  if (label === "Serial") {
+    return "border-amber-500/40 bg-amber-500/15 text-amber-300";
+  }
+
+  if (label === "Simulator") {
+    return "border-violet-500/40 bg-violet-500/15 text-violet-300";
+  }
+
+  return "border-slate-500/35 bg-slate-500/15 text-slate-300";
 }
 
 function clampRiskScore(value: unknown): number {
@@ -326,6 +374,7 @@ export default function DashboardPage() {
   const [activeSection, setActiveSection] = useState<DashboardSectionId>("patientOps");
   const [selectedPatientId, setSelectedPatientId] = useState<string>("");
   const [patientProfileSearchId, setPatientProfileSearchId] = useState("");
+  const [lastTelemetryDiagnostics, setLastTelemetryDiagnostics] = useState<LastTelemetryDiagnostics | null>(null);
 
   const navigateToPatientProfile = useCallback(() => {
     const normalizedPatientId = String(patientProfileSearchId || "").trim();
@@ -622,6 +671,12 @@ export default function DashboardPage() {
         });
       }
 
+      setLastTelemetryDiagnostics({
+        riskLevel: result.risk.riskLevel,
+        channels: result.escalationChannels ?? null,
+        capturedAt: new Date().toISOString(),
+      });
+
       void refreshForecastProjections().catch(() => undefined);
 
       await refresh();
@@ -649,6 +704,85 @@ export default function DashboardPage() {
   );
 
   const patients = useMemo(() => summaryData?.patients ?? [], [summaryData]);
+
+  const escalationStrip = useMemo(() => {
+    if (!lastTelemetryDiagnostics) {
+      return null;
+    }
+
+    const isCritical = lastTelemetryDiagnostics.riskLevel === "CRITICAL";
+    const channels = lastTelemetryDiagnostics.channels;
+
+    const voice =
+      !isCritical
+        ? { label: "Not Triggered", className: "border-slate-600/40 bg-slate-700/20 text-slate-300" }
+        : channels?.voiceBroadcast?.delivered
+          ? { label: "Delivered", className: "border-emerald-500/45 bg-emerald-500/15 text-emerald-300" }
+          : {
+              label: channels?.voiceBroadcast?.reason
+                ? `Failed (${channels.voiceBroadcast.reason})`
+                : "Failed",
+              className: "border-rose-500/45 bg-rose-500/15 text-rose-300",
+            };
+
+    const dashboard =
+      !isCritical
+        ? { label: "Not Triggered", className: "border-slate-600/40 bg-slate-700/20 text-slate-300" }
+        : channels?.dashboardAlertStream?.delivered
+          ? { label: "Delivered", className: "border-emerald-500/45 bg-emerald-500/15 text-emerald-300" }
+          : {
+              label: channels?.dashboardAlertStream?.reason
+                ? `Failed (${channels.dashboardAlertStream.reason})`
+                : "Failed",
+              className: "border-rose-500/45 bg-rose-500/15 text-rose-300",
+            };
+
+    const whatsapp = (() => {
+      if (!isCritical) {
+        return {
+          label: "Not Triggered",
+          className: "border-slate-600/40 bg-slate-700/20 text-slate-300",
+        };
+      }
+
+      if (!channels) {
+        return {
+          label: "Unavailable",
+          className: "border-slate-600/40 bg-slate-700/20 text-slate-300",
+        };
+      }
+
+      if (channels.whatsappEscalation.sent) {
+        return {
+          label: `Sent (${channels.whatsappEscalation.sentCount})`,
+          className: "border-emerald-500/45 bg-emerald-500/15 text-emerald-300",
+        };
+      }
+
+      if (!channels.whatsappEscalation.attempted) {
+        return {
+          label: channels.whatsappEscalation.reason
+            ? `Skipped (${channels.whatsappEscalation.reason})`
+            : "Skipped",
+          className: "border-amber-500/45 bg-amber-500/15 text-amber-300",
+        };
+      }
+
+      return {
+        label: channels.whatsappEscalation.reason
+          ? `Not Sent (${channels.whatsappEscalation.reason})`
+          : "Not Sent",
+        className: "border-amber-500/45 bg-amber-500/15 text-amber-300",
+      };
+    })();
+
+    return {
+      capturedAtLabel: new Date(lastTelemetryDiagnostics.capturedAt).toLocaleTimeString(),
+      voice,
+      dashboard,
+      whatsapp,
+    };
+  }, [lastTelemetryDiagnostics]);
 
   return (
     <div className="page-shell pb-10">
@@ -702,6 +836,11 @@ export default function DashboardPage() {
                     Off: <span className="font-semibold">{forecastSourceSummary.disabled}</span>
                   </div>
                 </div>
+              </div>
+              <div className="mt-3">
+                <Link href="/dashboard/api-access" className="btn-base btn-ghost inline-flex px-3 py-2 text-xs">
+                  Open API Access
+                </Link>
               </div>
             </div>
           </div>
@@ -816,6 +955,9 @@ export default function DashboardPage() {
                       <div className="flex items-center justify-between gap-3">
                         <p className="text-lg font-semibold text-slate-100">Patient {patient.patientId}</p>
                         <div className="flex items-center gap-2">
+                          <span className={`rounded-full border px-3 py-1 text-xs font-semibold ${telemetrySourceBadgeClass(patient.telemetrySource)}`}>
+                            Source: {toTelemetrySourceLabel(patient.telemetrySource)}
+                          </span>
                           <span className={`rounded-full border px-3 py-1 text-xs font-semibold ${badgeClass(patient.riskLevel)}`}>
                             {patient.riskLevel}
                           </span>
@@ -947,6 +1089,27 @@ export default function DashboardPage() {
                 </button>
               </form>
 
+              {escalationStrip ? (
+                <div className="mt-4 rounded-xl border border-white/10 bg-black/20 p-3">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <p className="text-xs uppercase tracking-[0.16em] text-slate-500">Last Escalation Diagnostics</p>
+                    <span className="text-[11px] text-slate-500">{escalationStrip.capturedAtLabel}</span>
+                  </div>
+
+                  <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
+                    <span className={`rounded-full border px-3 py-1 font-semibold ${escalationStrip.voice.className}`}>
+                      Voice: {escalationStrip.voice.label}
+                    </span>
+                    <span className={`rounded-full border px-3 py-1 font-semibold ${escalationStrip.dashboard.className}`}>
+                      Dashboard: {escalationStrip.dashboard.label}
+                    </span>
+                    <span className={`rounded-full border px-3 py-1 font-semibold ${escalationStrip.whatsapp.className}`}>
+                      WhatsApp: {escalationStrip.whatsapp.label}
+                    </span>
+                  </div>
+                </div>
+              ) : null}
+
               <div className="mt-5 grid gap-2">
                 <RiskExplanationPanel patientId={selectedPatientId} />
 
@@ -1013,6 +1176,11 @@ export default function DashboardPage() {
                         <div className="mt-2 grid gap-1 text-sm text-slate-300">
                           <p>Message: {event.message || "-"}</p>
                           <p>Language: {event.language || "-"}</p>
+                          <p>
+                            delivery_channels: {event.deliveryChannels && event.deliveryChannels.length > 0
+                              ? event.deliveryChannels.join(", ")
+                              : "-"}
+                          </p>
                         </div>
                       )}
 
@@ -1063,6 +1231,8 @@ export default function DashboardPage() {
             <VoiceServiceStatusPanel />
           </div>
         ) : null}
+
+        {activeSection === "integrationStatus" ? <IntegrationStatusPanel /> : null}
 
         {activeSection === "endpointCoverage" ? <EndpointCoveragePanel /> : null}
 

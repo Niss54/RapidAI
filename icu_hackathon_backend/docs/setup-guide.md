@@ -87,6 +87,8 @@ NEXT_PUBLIC_SERVER_URL=http://localhost:4000
 NEXT_PUBLIC_LIVEKIT_WS_URL=wss://your-livekit-domain
 ```
 
+Keep `NEXT_PUBLIC_SERVER_URL` aligned with `SERVER_PORT`. If you change one, update the other to the same port.
+
 ## 6) Supabase Schema Setup
 
 ```powershell

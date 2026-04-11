@@ -32,6 +32,27 @@ function shouldIgnoreEventError(error) {
   );
 }
 
+function normalizeDeliveryChannels(channels) {
+  if (!Array.isArray(channels)) {
+    return null;
+  }
+
+  const normalized = [];
+  const seen = new Set();
+
+  for (const channel of channels) {
+    const value = String(channel || "").trim().toLowerCase();
+    if (!value || seen.has(value)) {
+      continue;
+    }
+
+    seen.add(value);
+    normalized.push(value);
+  }
+
+  return normalized.length > 0 ? normalized : null;
+}
+
 async function safeInsert(table, payload) {
   if (!isSupabaseConfigured()) {
     return;
@@ -68,6 +89,8 @@ function mapTelemetryRow(row) {
 }
 
 function mapAlertRow(row) {
+  const deliveryChannels = normalizeDeliveryChannels(row.delivery_channels) || [];
+
   return {
     id: `alert-${row.id}`,
     eventType: "alert",
@@ -78,6 +101,7 @@ function mapAlertRow(row) {
     message: row.message,
     delivered: Boolean(row.delivered),
     deliveryReason: row.delivery_reason,
+    deliveryChannels,
   };
 }
 
@@ -110,7 +134,7 @@ async function listTimeline({ patientId, limit }) {
 
   let alertQuery = supabase
     .from(TABLES.alerts)
-    .select("id, patient_id, alert_type, language, message, delivered, delivery_reason, created_at")
+    .select("id, patient_id, alert_type, language, message, delivered, delivery_reason, delivery_channels, created_at")
     .order("created_at", { ascending: false })
     .limit(safeLimit);
 
@@ -238,6 +262,7 @@ async function logAlertEvent({
   message,
   delivered,
   deliveryReason,
+  deliveryChannels,
 }) {
   await safeInsert(TABLES.alerts, {
     patient_id: String(patientId),
@@ -246,6 +271,7 @@ async function logAlertEvent({
     message: String(message || ""),
     delivered: Boolean(delivered),
     delivery_reason: deliveryReason ? String(deliveryReason) : null,
+    delivery_channels: normalizeDeliveryChannels(deliveryChannels),
   });
 }
 

@@ -7,6 +7,7 @@ export type PatientRecord = {
   riskScore: number;
   riskLevel: string;
   predictedRiskNext5Minutes: "CRITICAL" | "MODERATE" | "WARNING" | "STABLE";
+  telemetrySource?: "hl7" | "serial" | "simulator" | string;
   lastUpdated: string;
 };
 
@@ -39,6 +40,7 @@ export type TimelineEvent = {
   message?: string;
   delivered?: boolean;
   deliveryReason?: string | null;
+  deliveryChannels?: string[];
 };
 
 export type TimelineResponse = {
@@ -168,10 +170,39 @@ export type TelemetryUpdateResponse = {
   };
   alert: {
     text: string;
-    language: "en" | "hi";
+    language: string;
     audioBase64: string | null;
     delivered: boolean;
     deliveryReason: string | null;
+    whatsappMessage?: string | null;
+    whatsapp?: {
+      attempted: boolean;
+      sent: boolean;
+      reason: string | null;
+      sentCount: number;
+      recipients: string[];
+      results: Array<Record<string, unknown>>;
+    };
+  } | null;
+  escalationChannels?: {
+    voiceBroadcast: {
+      attempted: boolean;
+      delivered: boolean;
+      reason: string | null;
+    };
+    dashboardAlertStream: {
+      attempted: boolean;
+      delivered: boolean;
+      reason: string | null;
+    };
+    whatsappEscalation: {
+      attempted: boolean;
+      sent: boolean;
+      reason: string | null;
+      sentCount: number;
+      recipients: string[];
+      results: Array<Record<string, unknown>>;
+    };
   } | null;
 };
 
@@ -308,7 +339,45 @@ export type HealthResponse = {
   };
 };
 
-const SERVER_BASE = process.env.NEXT_PUBLIC_SERVER_URL ?? "http://localhost:3001";
+export type IntegrationStatusResponse = {
+  hl7_listener: "running" | "stopped" | string;
+  serial_bridge: "running" | "stopped" | string;
+  last_message_received: string | null;
+};
+
+export type WhatsAppIntegrationStatusResponse = {
+  status: "active" | "inactive" | string;
+  tokenConfigured: boolean;
+  phoneNumberConfigured: boolean;
+  reason?: string | null;
+};
+
+export type ApiKeyDetailsResponse = {
+  user_id: string;
+  plan_type: "free" | "pro" | "hospital" | string;
+  usage_limit: number;
+  usage_count: number;
+  created_at: string;
+  expires_at: string | null;
+  is_active: boolean;
+  api_key_masked: string;
+  auto_created: boolean;
+};
+
+export type ApiKeyRegenerateResponse = {
+  user_id: string;
+  plan_type: "free" | "pro" | "hospital" | string;
+  usage_limit: number;
+  usage_count: number;
+  created_at: string;
+  expires_at: string | null;
+  is_active: boolean;
+  api_key_masked: string;
+  api_key: string;
+  regenerated: boolean;
+};
+
+const SERVER_BASE = process.env.NEXT_PUBLIC_SERVER_URL ?? "http://localhost:4000";
 const ANALYTICS_BASE = process.env.NEXT_PUBLIC_ANALYTICS_URL ?? "http://localhost:8080";
 
 function buildUrl(base: string, path: string): string {
@@ -342,12 +411,48 @@ async function requestJson<T>(path: string, init?: RequestInit): Promise<T> {
   return requestJsonFromBase(SERVER_BASE, path, init);
 }
 
+function normalizeApiAccessUserId(userId: string): string {
+  const normalized = String(userId || "").trim();
+  if (!normalized) {
+    throw new Error("userId is required");
+  }
+
+  return normalized;
+}
+
 export function toDataUrl(base64Audio: string): string {
   return `data:audio/mpeg;base64,${base64Audio}`;
 }
 
 export async function fetchHealth(): Promise<HealthResponse> {
   return requestJson("/health");
+}
+
+export async function fetchIntegrationStatus(): Promise<IntegrationStatusResponse> {
+  return requestJson("/integration/status");
+}
+
+export async function fetchWhatsAppIntegrationStatus(): Promise<WhatsAppIntegrationStatusResponse> {
+  return requestJson("/integration/whatsapp-status");
+}
+
+export async function fetchMyApiKey(userId: string): Promise<ApiKeyDetailsResponse> {
+  const normalizedUserId = normalizeApiAccessUserId(userId);
+  return requestJson("/api-key/my-key", {
+    headers: {
+      "x-user-id": normalizedUserId,
+    },
+  });
+}
+
+export async function regenerateMyApiKey(userId: string): Promise<ApiKeyRegenerateResponse> {
+  const normalizedUserId = normalizeApiAccessUserId(userId);
+  return requestJson("/api-key/regenerate", {
+    method: "POST",
+    headers: {
+      "x-user-id": normalizedUserId,
+    },
+  });
 }
 
 export async function fetchSimulatorStatus(): Promise<SimulatorControlResponse> {

@@ -60,13 +60,51 @@ create table if not exists public.alert_events (
   message text not null,
   delivered boolean not null default false,
   delivery_reason text,
+  delivery_channels text[],
   created_at timestamptz not null default timezone('utc', now())
 );
+
+alter table public.alert_events
+  add column if not exists delivery_channels text[];
 
 create index if not exists idx_alert_events_patient_time
   on public.alert_events(patient_id, created_at desc);
 create index if not exists idx_alert_events_type_time
   on public.alert_events(alert_type, created_at desc);
+
+create extension if not exists pgcrypto;
+
+create table if not exists public.api_keys (
+  id uuid primary key default gen_random_uuid(),
+  user_id text not null,
+  api_key text not null unique,
+  key_hint text,
+  plan_type text not null check (plan_type in ('free', 'pro', 'hospital')),
+  usage_limit integer not null check (usage_limit >= 0),
+  created_at timestamptz not null default timezone('utc', now()),
+  expires_at timestamptz,
+  is_active boolean not null default true
+);
+
+alter table public.api_keys
+  add column if not exists key_hint text;
+
+create index if not exists idx_api_keys_user_id
+  on public.api_keys(user_id);
+create index if not exists idx_api_keys_active_expires
+  on public.api_keys(is_active, expires_at);
+
+create table if not exists public.api_usage_logs (
+  id uuid primary key default gen_random_uuid(),
+  api_key text not null,
+  endpoint text not null,
+  timestamp timestamptz not null default timezone('utc', now())
+);
+
+create index if not exists idx_api_usage_logs_key_timestamp
+  on public.api_usage_logs(api_key, timestamp desc);
+create index if not exists idx_api_usage_logs_endpoint_timestamp
+  on public.api_usage_logs(endpoint, timestamp desc);
 
 create extension if not exists pg_cron with schema extensions;
 

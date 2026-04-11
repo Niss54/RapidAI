@@ -4,7 +4,7 @@ import Image from "next/image";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { queryVoice, toDataUrl, VoiceLanguage, VoiceQueryResponse } from "@/lib/api";
 
-const SERVER_BASE = process.env.NEXT_PUBLIC_SERVER_URL ?? "http://localhost:3001";
+const SERVER_BASE = process.env.NEXT_PUBLIC_SERVER_URL ?? "http://localhost:4000";
 const SESSION_STORAGE_KEY = "rapidai-chat-sessions-v3";
 const MAX_SAVED_SESSIONS = 120;
 const RAPID_LOGO_SRC = "/assets/rapid.png?v=20260409";
