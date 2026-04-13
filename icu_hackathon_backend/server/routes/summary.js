@@ -5,6 +5,36 @@ const { analyzeRisk } = require("../services/riskAnalyzer");
 const { predictRiskNextFiveMinutes } = require("../services/forecastService");
 
 const router = express.Router();
+const PROJECTION_FORECAST_CONCURRENCY = (() => {
+  const parsed = Number(process.env.PROJECTION_FORECAST_CONCURRENCY || 6);
+  if (!Number.isFinite(parsed)) {
+    return 6;
+  }
+
+  const normalized = Math.round(parsed);
+  if (normalized < 1) {
+    return 1;
+  }
+
+  return Math.min(normalized, 24);
+})();
+const ABORT_WARNING_PATTERN = /\babort(ed|ing)?\b|operation was aborted/i;
+const PROJECTION_RETRY_BACKOFF_MS = (() => {
+  const parsed = Number(process.env.PROJECTION_RETRY_BACKOFF_MS || 140);
+  if (!Number.isFinite(parsed)) {
+    return 140;
+  }
+
+  const normalized = Math.round(parsed);
+  return Math.max(0, Math.min(normalized, 2000));
+})();
+
+function resolveRequestApiKey(req) {
+  const header = req?.headers?.["x-api-key"];
+  return Array.isArray(header)
+    ? String(header[0] || "").trim()
+    : String(header || "").trim();
+}
 
 function toFiniteNumber(value) {
   const parsed = Number(value);
@@ -254,18 +284,78 @@ function projectionsToCsv(payload) {
   return [...metadataRows, headers, ...rows].map((row) => row.map(toCsvField).join(",")).join("\n");
 }
 
-async function buildForecastProjectionPayload(filters) {
+async function mapWithConcurrency(items, concurrency, mapper) {
+  const source = Array.isArray(items) ? items : [];
+  if (source.length === 0) {
+    return [];
+  }
+
+  const workerCount = Math.max(1, Math.min(Number(concurrency) || 1, source.length));
+  const results = new Array(source.length);
+  let nextIndex = 0;
+
+  async function worker() {
+    while (nextIndex < source.length) {
+      const currentIndex = nextIndex;
+      nextIndex += 1;
+      results[currentIndex] = await mapper(source[currentIndex], currentIndex);
+    }
+  }
+
+  await Promise.all(Array.from({ length: workerCount }, () => worker()));
+  return results;
+}
+
+function shouldRetryForecast(forecast) {
+  if (String(forecast?.source || "").trim().toLowerCase() === "legacy-ml") {
+    return false;
+  }
+
+  const warning = String(forecast?.warning || "").trim();
+  if (!warning) {
+    return false;
+  }
+
+  return ABORT_WARNING_PATTERN.test(warning);
+}
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, Math.max(0, Number(ms) || 0)));
+}
+
+async function resolveProjectionForecast(vitals, options = {}, index = 0) {
+  const firstAttempt = await predictRiskNextFiveMinutes(vitals, options);
+  if (!shouldRetryForecast(firstAttempt)) {
+    return firstAttempt;
+  }
+
+  const retryDelayMs = PROJECTION_RETRY_BACKOFF_MS + (Number(index) % 4) * 35;
+  if (retryDelayMs > 0) {
+    await sleep(retryDelayMs);
+  }
+
+  return predictRiskNextFiveMinutes(vitals, options);
+}
+
+async function buildForecastProjectionPayload(filters, options = {}) {
+  const forwardedApiKey = String(options?.apiKey || "").trim();
   const patients = await Patient.listPatients();
   const filteredPatients = patients.filter((patient) => patientMatchesProjectionFilters(patient, filters));
 
-  const projections = await Promise.all(
-    filteredPatients.map(async (patient) => {
-      const forecast = await predictRiskNextFiveMinutes({
+  const projections = await mapWithConcurrency(
+    filteredPatients,
+    PROJECTION_FORECAST_CONCURRENCY,
+    async (patient, index) => {
+      const vitals = {
         heartRate: patient.heartRate,
         spo2: patient.spo2,
         temperature: patient.temperature,
         bloodPressure: patient.bloodPressure,
-      });
+      };
+
+      const forecast = await resolveProjectionForecast(vitals, {
+        apiKey: forwardedApiKey,
+      }, index);
 
       const currentRiskScore = clampRiskScore(patient.riskScore);
       const projectedVitals = projectedVitalsFromForecast(forecast.forecastedVitals, patient);
@@ -299,7 +389,7 @@ async function buildForecastProjectionPayload(filters) {
         forecastedVitals: forecast.forecastedVitals,
         timelineProjection: buildTimelineProjection(currentRiskScore, futureRiskScore),
       };
-    })
+    }
   );
 
   const generatedAt = new Date().toISOString();
@@ -375,7 +465,9 @@ router.get("/forecast/projection", async (req, res) => {
   }
 
   try {
-    const payload = await buildForecastProjectionPayload(filters);
+    const payload = await buildForecastProjectionPayload(filters, {
+      apiKey: resolveRequestApiKey(req),
+    });
     return res.status(200).json(payload);
   } catch (error) {
     return res.status(500).json({
@@ -402,7 +494,9 @@ router.get("/forecast/projection/export", async (req, res) => {
   }
 
   try {
-    const payload = await buildForecastProjectionPayload(filters);
+    const payload = await buildForecastProjectionPayload(filters, {
+      apiKey: resolveRequestApiKey(req),
+    });
     const timestamp = payload.generatedAt.replace(/[.:]/g, "-");
 
     if (format === "json") {

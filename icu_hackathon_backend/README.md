@@ -328,6 +328,7 @@ pip install -r requirements-ml.txt
 
 2. Configure environment
 Copy `.env.example` to `.env` and set required keys (`SUPABASE_*`, `LIVEKIT_*`, `SARVAM_API_KEY`, `GROQ_API_KEY`).
+For heavy projection workloads, tune `PROJECTION_FORECAST_CONCURRENCY` (default `6`) to control `/icu/forecast/projection` parallel forecast fan-out, and `PROJECTION_RETRY_BACKOFF_MS` (default `140`) to stagger abort-only retries.
 
 3. Apply Supabase schema
 ```bash

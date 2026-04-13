@@ -1,6 +1,5 @@
 import type { Metadata } from "next";
 import { IBM_Plex_Mono, Space_Grotesk } from "next/font/google";
-import CustomCursor from "@/components/CustomCursor";
 import LiquidEther from "@/components/LiquidEther";
 import "./globals.css";
 
@@ -31,23 +30,20 @@ export default function RootLayout({
       lang="en"
       className={`${spaceGrotesk.variable} ${ibmPlexMono.variable} h-full antialiased`}
     >
-      <body className="min-h-full bg-app text-foreground">
-        <CustomCursor />
+      <body suppressHydrationWarning className="min-h-full bg-app text-foreground">
 
         <div className="liquid-ether-layer" aria-hidden="true">
           <LiquidEther
-            mouseForce={16}
-            cursorSize={110}
-            isViscous
-            viscous={30}
+            mouseForce={11}
+            cursorSize={92}
             colors={["#5227FF", "#FF9FFC", "#B19EEF"]}
             autoDemo
             autoSpeed={0.5}
-            autoIntensity={2.2}
+            autoIntensity={1.4}
             isBounce={false}
-            resolution={0.5}
-            iterationsViscous={28}
-            iterationsPoisson={26}
+            resolution={0.38}
+            iterationsViscous={18}
+            iterationsPoisson={16}
             adaptivePerformance
             style={{ width: "100%", height: "100%", position: "relative" }}
           />

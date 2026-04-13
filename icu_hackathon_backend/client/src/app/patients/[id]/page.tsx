@@ -308,7 +308,10 @@ export default function PatientDetailPage() {
         if (triageResult.status === "fulfilled") {
           nextTriage = triageResult.value;
         } else {
-          failures.push(`triage: ${toErrorMessage(triageResult.reason)}`);
+          const triageError = toErrorMessage(triageResult.reason);
+          if (!/not found/i.test(triageError)) {
+            failures.push(`triage: ${triageError}`);
+          }
         }
 
         if (voiceResult.status === "fulfilled") {

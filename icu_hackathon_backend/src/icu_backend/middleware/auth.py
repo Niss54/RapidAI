@@ -197,6 +197,9 @@ def _is_expired(expires_at: str | None) -> bool:
 
 
 def enforce_api_key(request: Request, api_prefix: str) -> None:
+    if str(request.method or "").upper() == "OPTIONS":
+        return
+
     path = request.path
     if not _is_protected_path(path, api_prefix):
         return

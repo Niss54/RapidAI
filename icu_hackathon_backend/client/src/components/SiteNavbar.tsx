@@ -67,6 +67,7 @@ export default function SiteNavbar({ lastUpdatedAt = null }: SiteNavbarProps) {
   const lastUpdatedLabel = formatLastUpdated(lastUpdatedAt);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [telemetryMode, setTelemetryMode] = useState<TelemetryMode>("live");
+  const isDashboardRoute = pathname.startsWith("/dashboard");
 
   const shouldShowTelemetryModeBadge =
     pathname === "/dashboard" || pathname.startsWith("/patients/");
@@ -127,7 +128,7 @@ export default function SiteNavbar({ lastUpdatedAt = null }: SiteNavbarProps) {
 
   return (
     <header className="sticky top-0 z-40 pt-4">
-      <div className="container-wrap nav-compact-wrap">
+      <div className={`container-wrap ${isDashboardRoute ? "nav-dashboard-wrap" : "nav-compact-wrap"}`}>
         <div className="nav-glass flex items-center justify-between rounded-[30px] px-3 py-2.5 md:px-5 md:py-3">
           <Link href="/" className="flex items-center gap-2 px-2">
             <Image
@@ -145,14 +146,14 @@ export default function SiteNavbar({ lastUpdatedAt = null }: SiteNavbarProps) {
             </div>
           </Link>
 
-          <nav className="hidden items-center gap-1 md:flex">
+          <nav className="hidden shrink-0 items-center gap-1 md:flex md:flex-nowrap">
             {navItems.map((item) => {
               const active = pathname === item.href;
               return (
                 <Link
                   key={item.href}
                   href={item.href}
-                  className={`rounded-full px-4 py-2 text-sm nav-link ${active ? "nav-link-active" : ""}`}
+                  className={`rounded-full px-4 py-2 text-sm whitespace-nowrap nav-link ${active ? "nav-link-active" : ""}`}
                 >
                   {item.label}
                 </Link>
@@ -162,7 +163,7 @@ export default function SiteNavbar({ lastUpdatedAt = null }: SiteNavbarProps) {
             {isAuthenticated ? (
               <Link
                 href={API_ACCESS_ROUTE}
-                className={`rounded-full px-4 py-2 text-sm nav-link ${
+                className={`rounded-full px-4 py-2 text-sm whitespace-nowrap nav-link ${
                   pathname === API_ACCESS_ROUTE ? "nav-link-active" : ""
                 }`}
               >

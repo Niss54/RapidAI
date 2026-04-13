@@ -13,6 +13,7 @@ const {
 } = require("./sessionState");
 const Patient = require("../models/Patient");
 const { logVoiceInteraction } = require("../models/EventLog");
+const platformGuideKnowledge = require("./platformGuideKnowledge");
 
 const DUMMY_PATIENTS = {
   "201": {
@@ -281,6 +282,52 @@ function sanitizePatientId(rawValue) {
 
 function isWellbeingQuery(text) {
   return WELLBEING_QUERY_PATTERN.test(String(text || ""));
+}
+
+function isPlatformGuideQuery(text) {
+  return platformGuideKnowledge.isPlatformGuideQuery(text);
+}
+
+function resolvePlatformGuideTopic(transcript) {
+  const text = String(transcript || "").toLowerCase();
+
+  if (/everything|a2z|all\s+features|all\s+about|complete|full\s+overview|overview|saare/.test(text)) {
+    return "OVERVIEW";
+  }
+
+  if (/api key|x-api-key|my-key|regenerate|usage limit|quota|expiry|expire|plan/.test(text)) {
+    return "API_KEY";
+  }
+
+  if (/developer|integration|curl|sdk|docs|documentation|endpoint|api\s*doc|reference/.test(text)) {
+    return "DEVELOPER";
+  }
+
+  if (/hospital|icu team|workflow|onboard|deployment|hl7|serial|monitor/.test(text)) {
+    return "HOSPITAL";
+  }
+
+  if (/whatsapp|escalation|critical alert|remote alert/.test(text)) {
+    return "WHATSAPP";
+  }
+
+  if (/unique|uniqueness|market|difference|why better|competitive|not available/.test(text)) {
+    return "UNIQUENESS";
+  }
+
+  return "OVERVIEW";
+}
+
+function buildPlatformGuideContext() {
+  return platformGuideKnowledge.buildPlatformGuideContext();
+}
+
+function platformGuideText(transcript, language) {
+  return platformGuideKnowledge.buildPlatformGuideReply({
+    transcript,
+    language,
+    normalizeLanguageFn: normalizeLanguage,
+  });
 }
 
 function extractPatientIdFromText(text) {
@@ -654,7 +701,16 @@ async function processVoiceQuery({ audioBuffer, text, language, userId }) {
     };
   }
 
-  let responseLanguage = normalizeLanguage(getLanguage(sessionId) || activeLanguage || "en");
+  if (isPlatformGuideQuery(transcript) && intentResult.intent !== "LANGUAGE_SWITCH") {
+    intentResult = {
+      ...intentResult,
+      intent: "PLATFORM_GUIDE",
+      patientId: null,
+      asksForSummary: false,
+    };
+  }
+
+  let responseLanguage = normalizeLanguage(activeLanguage || getLanguage(sessionId) || "en");
   let responseText = "";
   let resolvedPatientId =
     sanitizePatientId(intentResult.patientId) ||
@@ -662,6 +718,10 @@ async function processVoiceQuery({ audioBuffer, text, language, userId }) {
     extractRecentPatientIdFromHistory(sessionHistory);
   let resolvedIntent = intentResult.intent || "GENERAL_QUERY";
   let resolvedEmotion = intentResult.emotion || "NEUTRAL";
+
+  if (resolvedIntent === "PLATFORM_GUIDE") {
+    resolvedPatientId = null;
+  }
 
   if (intentResult.intent === "LANGUAGE_SWITCH") {
     responseLanguage = setLanguage(intentResult.language || responseLanguage, sessionId);
@@ -710,25 +770,31 @@ async function processVoiceQuery({ audioBuffer, text, language, userId }) {
     const summary = liveSummary || fallbackData?.summary || null;
 
     let llmReply = null;
-    try {
-      llmReply = await withTimeout(
-        generateContextualReply({
-          transcript,
-          responseLanguage,
-          intent: resolvedIntent,
-          emotion: resolvedEmotion,
-          patient,
-          summary,
-          sessionHistory,
-        }),
-        TIMEOUTS.replyMs,
-        "reply generation"
-      );
-    } catch {
-      llmReply = null;
+    const platformGuide = resolvedIntent === "PLATFORM_GUIDE" ? buildPlatformGuideContext() : null;
+    if (resolvedIntent !== "PLATFORM_GUIDE") {
+      try {
+        llmReply = await withTimeout(
+          generateContextualReply({
+            transcript,
+            responseLanguage,
+            intent: resolvedIntent,
+            emotion: resolvedEmotion,
+            patient,
+            summary,
+            sessionHistory,
+            platformGuide,
+          }),
+          TIMEOUTS.replyMs,
+          "reply generation"
+        );
+      } catch {
+        llmReply = null;
+      }
     }
 
-    if (llmReply && String(llmReply).trim().length > 0) {
+    if (resolvedIntent === "PLATFORM_GUIDE") {
+      responseText = platformGuideText(transcript, responseLanguage);
+    } else if (llmReply && String(llmReply).trim().length > 0) {
       responseText = String(llmReply).trim();
     } else if (resolvedIntent === "PATIENT_STATUS") {
       if (!resolvedPatientId) {
@@ -769,7 +835,9 @@ async function processVoiceQuery({ audioBuffer, text, language, userId }) {
     }
   }
 
-  responseText = withIntroIfNeeded(responseText, responseLanguage, sessionId);
+  if (resolvedIntent !== "PLATFORM_GUIDE") {
+    responseText = withIntroIfNeeded(responseText, responseLanguage, sessionId);
+  }
 
   const audioBase64 = await synthesizeSpeechBase64(responseText, responseLanguage);
 

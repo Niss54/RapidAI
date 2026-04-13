@@ -44,6 +44,19 @@ body {
   overflow-y: auto;
 }
 
+html.dashboard-scrollbar-hidden,
+body.dashboard-scrollbar-hidden {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+html.dashboard-scrollbar-hidden::-webkit-scrollbar,
+body.dashboard-scrollbar-hidden::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+  display: none;
+}
+
 body::before {
   content: "";
   position: fixed;
@@ -112,6 +125,10 @@ body::before {
 
 .nav-compact-wrap {
   width: min(1080px, calc(100% - 2.2rem));
+}
+
+.nav-dashboard-wrap {
+  width: min(1240px, calc(100% - 1.6rem));
 }
 
 .surface {
@@ -509,25 +526,21 @@ body::before {
 }
 
 .dashboard-tabs-track {
-  scrollbar-width: thin;
-  scrollbar-color: rgba(148, 163, 184, 0.48) transparent;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
 }
 
 .dashboard-tabs-track::-webkit-scrollbar {
-  height: 7px;
+  display: none;
 }
 
-.dashboard-tabs-track::-webkit-scrollbar-track {
-  background: transparent;
-}
-
-.dashboard-tabs-track::-webkit-scrollbar-thumb {
-  background: rgba(148, 163, 184, 0.42);
-  border-radius: 999px;
-}
-
-.dashboard-tabs-track::-webkit-scrollbar-thumb:hover {
-  background: rgba(125, 211, 252, 0.55);
+.dashboard-tab-button {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 60px;
+  line-height: 1.05;
 }
 
 @keyframes pingGlow {
@@ -800,8 +813,58 @@ body::before {
 }
 
 .gpt-recent-title {
+  flex: 1;
+  min-width: 0;
   font-size: 0.86rem;
   color: #edf3ff;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.gpt-recent-title-row {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding-right: 1.95rem;
+}
+
+.gpt-recent-delete-btn {
+  position: absolute;
+  right: 0;
+  top: 50%;
+  border-radius: 999px;
+  border: 1px solid rgba(248, 113, 113, 0.46);
+  background: rgba(52, 11, 20, 0.92);
+  color: #fecaca;
+  width: 1.6rem;
+  height: 1.6rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(-50%) scale(0.92);
+  transition: opacity 160ms ease, transform 160ms ease, border-color 160ms ease, background-color 160ms ease;
+}
+
+.gpt-recent-delete-icon {
+  width: 1.06rem;
+  height: 1.06rem;
+}
+
+.gpt-recent-item:hover .gpt-recent-delete-btn,
+.gpt-recent-item:focus-within .gpt-recent-delete-btn,
+.gpt-recent-item-delete-visible .gpt-recent-delete-btn {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translateY(-50%) scale(1);
+}
+
+.gpt-recent-delete-btn:hover {
+  border-color: rgba(252, 165, 165, 0.8);
+  background: rgba(84, 14, 27, 0.96);
 }
 
 .gpt-recent-time {
@@ -1068,10 +1131,56 @@ body::before {
   letter-spacing: 0.03em;
 }
 
+.gpt-composer-plus-btn {
+  min-width: 2.28rem;
+  width: 2.28rem;
+  height: 2.28rem;
+  font-size: 1.08rem;
+  font-weight: 700;
+  line-height: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
 .gpt-composer-icon-active {
   border-color: rgba(34, 197, 94, 0.58);
   background: rgba(20, 53, 35, 0.86);
   color: #d6ffe6;
+}
+
+.gpt-composer-mic-btn {
+  min-width: 2.2rem;
+  width: 2.2rem;
+  height: 2.2rem;
+  border-color: rgba(226, 232, 240, 0.72);
+  background: linear-gradient(180deg, #f8fbff 0%, #e8eef7 100%);
+  color: #0f172a;
+  box-shadow:
+    0 3px 10px rgba(2, 6, 23, 0.26),
+    inset 0 1px 0 rgba(255, 255, 255, 0.95);
+  text-transform: none;
+  letter-spacing: normal;
+  padding: 0;
+}
+
+.gpt-composer-mic-btn:hover {
+  border-color: rgba(241, 245, 249, 0.92);
+  background: linear-gradient(180deg, #ffffff 0%, #eef3fb 100%);
+}
+
+.gpt-composer-mic-btn.gpt-composer-icon-active {
+  border-color: rgba(34, 197, 94, 0.68);
+  background: linear-gradient(180deg, #ecfdf5 0%, #d1fae5 100%);
+  color: #065f46;
+}
+
+.gpt-composer-mic-svg {
+  width: 1.22rem;
+  height: 1.22rem;
+  display: block;
+  margin: 0 auto;
+  transform: translateX(0.5px);
 }
 
 .gpt-send-btn {

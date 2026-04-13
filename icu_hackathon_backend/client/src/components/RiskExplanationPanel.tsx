@@ -15,6 +15,12 @@ import { AnalyticsPatientDetail, fetchAnalyticsPatientById } from "@/lib/api";
 
 type RiskExplanationPanelProps = {
   patientId: string;
+  fallbackVitals?: {
+    heartRate: number;
+    spo2: number;
+    temperature: number;
+    bloodPressure: string;
+  } | null;
 };
 
 type ContributionKey = "spo2" | "heartRate" | "temperature" | "bloodPressure";
@@ -84,6 +90,21 @@ function pickVital(latestVitals: Record<string, unknown>, keys: string[]): numbe
     }
   }
   return null;
+}
+
+function parseBloodPressureParts(value: string): { sbp: number | null; dbp: number | null } {
+  const raw = String(value || "").trim();
+  const match = raw.match(/^(\d{2,3})\s*\/\s*(\d{2,3})$/);
+  if (!match) {
+    return { sbp: null, dbp: null };
+  }
+
+  const sbp = toNumber(match[1]);
+  const dbp = toNumber(match[2]);
+  return {
+    sbp,
+    dbp,
+  };
 }
 
 function resolveSpO2Contribution(spo2: number | null): Omit<ContributionRow, "key" | "label" | "color"> {
@@ -276,6 +297,41 @@ function buildContributions(patient: AnalyticsPatientDetail): ContributionRow[] 
   ];
 }
 
+function buildContributionsFromFallbackVitals(vitals: {
+  heartRate: number;
+  spo2: number;
+  temperature: number;
+  bloodPressure: string;
+}): ContributionRow[] {
+  const spo2 = toNumber(vitals.spo2);
+  const hr = toNumber(vitals.heartRate);
+  const temp = toNumber(vitals.temperature);
+  const { sbp, dbp } = parseBloodPressureParts(vitals.bloodPressure);
+
+  return [
+    {
+      key: "spo2",
+      ...CONTRIBUTION_STYLE.spo2,
+      ...resolveSpO2Contribution(spo2),
+    },
+    {
+      key: "heartRate",
+      ...CONTRIBUTION_STYLE.heartRate,
+      ...resolveHeartRateContribution(hr),
+    },
+    {
+      key: "temperature",
+      ...CONTRIBUTION_STYLE.temperature,
+      ...resolveTemperatureContribution(temp),
+    },
+    {
+      key: "bloodPressure",
+      ...CONTRIBUTION_STYLE.bloodPressure,
+      ...resolveBloodPressureContribution(null, sbp, dbp),
+    },
+  ];
+}
+
 function ContributionTooltip({
   active,
   payload,
@@ -318,7 +374,7 @@ function ContributionTooltip({
   );
 }
 
-export default function RiskExplanationPanel({ patientId }: RiskExplanationPanelProps) {
+export default function RiskExplanationPanel({ patientId, fallbackVitals = null }: RiskExplanationPanelProps) {
   const [patient, setPatient] = useState<AnalyticsPatientDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -387,12 +443,21 @@ export default function RiskExplanationPanel({ patientId }: RiskExplanationPanel
     };
   }, [refreshPatient]);
 
-  const contributions = useMemo(() => {
-    if (!patient) {
+  const fallbackContributions = useMemo(() => {
+    if (!fallbackVitals) {
       return [];
     }
-    return buildContributions(patient);
-  }, [patient]);
+
+    return buildContributionsFromFallbackVitals(fallbackVitals);
+  }, [fallbackVitals]);
+
+  const contributions = useMemo(() => {
+    if (patient) {
+      return buildContributions(patient);
+    }
+
+    return fallbackContributions;
+  }, [patient, fallbackContributions]);
 
   const totalContribution = useMemo(() => {
     return contributions.reduce((sum, row) => sum + row.value, 0);
@@ -447,7 +512,15 @@ export default function RiskExplanationPanel({ patientId }: RiskExplanationPanel
         {lastSyncedAt ? ` | Last sync: ${new Date(lastSyncedAt).toLocaleTimeString()}` : ""}
       </p>
 
-      {error ? <p className="mt-3 rounded-lg border border-rose-500/35 bg-rose-900/20 p-3 text-xs text-rose-300">{error}</p> : null}
+      {error && fallbackContributions.length === 0 ? (
+        <p className="mt-3 rounded-lg border border-rose-500/35 bg-rose-900/20 p-3 text-xs text-rose-300">{error}</p>
+      ) : null}
+
+      {error && fallbackContributions.length > 0 ? (
+        <p className="mt-3 rounded-lg border border-amber-500/35 bg-amber-500/15 p-3 text-xs text-amber-200">
+          Live analytics fetch failed, showing explanation using latest dashboard vitals.
+        </p>
+      ) : null}
 
       {loading ? <p className="mt-3 text-sm text-slate-400">Loading patient contribution weights...</p> : null}
 

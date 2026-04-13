@@ -6,8 +6,10 @@ import SiteFooter from "@/components/SiteFooter";
 import SiteNavbar from "@/components/SiteNavbar";
 import {
   ApiKeyDetailsResponse,
+  clearRuntimeApiKey,
   fetchMyApiKey,
   regenerateMyApiKey,
+  setRuntimeApiKey,
 } from "@/lib/api";
 
 const DEFAULT_USER_ID = "doctor-101";
@@ -143,6 +145,8 @@ export default function ApiAccessPage() {
       window.localStorage.setItem(USER_ID_STORAGE_KEY, normalizedUserId);
     }
 
+    clearRuntimeApiKey();
+
     setRevealedApiKey(null);
     setActiveUserId(normalizedUserId);
   }
@@ -186,6 +190,7 @@ export default function ApiAccessPage() {
         auto_created: false,
       });
       setRevealedApiKey(result.api_key);
+      setRuntimeApiKey(result.api_key);
       setCopyStatus("New API key ready. Copy it now.");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not regenerate API key.");

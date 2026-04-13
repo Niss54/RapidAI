@@ -6,6 +6,28 @@ const { logIngestionError } = require("./ingestionLogger");
 let simulationTimer = null;
 let running = false;
 let lastError = null;
+let simulatorApiKey = String(process.env.SIMULATOR_API_KEY || "").trim();
+
+function normalizeApiKey(value) {
+  return String(value || "").trim();
+}
+
+function resolveSimulatorApiKey() {
+  if (simulatorApiKey) {
+    return simulatorApiKey;
+  }
+
+  return normalizeApiKey(process.env.SIMULATOR_API_KEY);
+}
+
+function setSimulatorApiKey(value) {
+  const normalized = normalizeApiKey(value);
+  if (!normalized) {
+    return;
+  }
+
+  simulatorApiKey = normalized;
+}
 
 function parseIntervalMs() {
   const raw = Number(process.env.SIMULATOR_INTERVAL_MS || DEFAULT_INTERVAL_MS);
@@ -60,11 +82,18 @@ function buildTelemetryPayload() {
 }
 
 async function postTelemetrySample() {
+  const headers = {
+    "Content-Type": "application/json",
+  };
+
+  const runtimeApiKey = resolveSimulatorApiKey();
+  if (runtimeApiKey) {
+    headers["x-api-key"] = runtimeApiKey;
+  }
+
   const response = await fetch(resolveTargetUrl(), {
     method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
+    headers,
     body: JSON.stringify(buildTelemetryPayload()),
   });
 
@@ -93,11 +122,14 @@ function getSimulationStatus() {
     status: running ? "Running" : "Stopped",
     intervalMs: parseIntervalMs(),
     targetUrl: resolveTargetUrl(),
+    apiKeyConfigured: Boolean(resolveSimulatorApiKey()),
     lastError,
   };
 }
 
-function startSimulation() {
+function startSimulation(options = {}) {
+  setSimulatorApiKey(options.apiKey);
+
   if (running && simulationTimer) {
     return getSimulationStatus();
   }

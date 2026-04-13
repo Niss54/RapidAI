@@ -10,6 +10,13 @@ const { logIngestionError } = require("../services/ingestionLogger");
 
 const router = express.Router();
 
+function resolveRequestApiKey(req) {
+  const header = req?.headers?.["x-api-key"];
+  return Array.isArray(header)
+    ? String(header[0] || "").trim()
+    : String(header || "").trim();
+}
+
 function resolveTelemetrySource(telemetry) {
   const sourceHint = String(telemetry?.sourceHint || "").trim().toLowerCase();
   const monitorId = String(telemetry?.monitorId || "").trim().toLowerCase();
@@ -72,12 +79,17 @@ router.post("/update", async (req, res) => {
     });
     const patientId = identity.patientId;
 
-    const forecast = await predictRiskNextFiveMinutes({
-      heartRate,
-      spo2,
-      temperature,
-      bloodPressure,
-    });
+    const forecast = await predictRiskNextFiveMinutes(
+      {
+        heartRate,
+        spo2,
+        temperature,
+        bloodPressure,
+      },
+      {
+        apiKey: resolveRequestApiKey(req),
+      }
+    );
     const telemetrySource = resolveTelemetrySource(telemetry);
 
     const risk = analyzeRisk({ patientId, heartRate, spo2, temperature, bloodPressure });

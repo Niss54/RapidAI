@@ -637,6 +637,40 @@ function transcriptMessage(text: string): ChatMessage {
   };
 }
 
+function MicIcon() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true" className="gpt-composer-mic-svg">
+      <rect x="4.5" y="10" width="2.4" height="4" rx="1.2" fill="currentColor" />
+      <rect x="8.6" y="8" width="2.4" height="8" rx="1.2" fill="currentColor" />
+      <rect x="12.7" y="6.6" width="2.4" height="10.8" rx="1.2" fill="currentColor" />
+      <rect x="16.8" y="9.2" width="2.4" height="5.6" rx="1.2" fill="currentColor" />
+    </svg>
+  );
+}
+
+function DeleteChatIcon() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true" className="gpt-recent-delete-icon">
+      <path
+        d="M9 4.5h6m-8 3h10m-8.3 0-.3 11a1.5 1.5 0 0 0 1.5 1.5h4.2a1.5 1.5 0 0 0 1.5-1.5l-.3-11"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.8"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <path
+        d="M10.5 10.5v6m3-6v6"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.8"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
 const INITIAL_SESSION = createSession("en");
 
 export default function ChatPage() {
@@ -648,6 +682,7 @@ export default function ChatPage() {
   const [searchQuery, setSearchQuery] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
+  const [deleteRevealSessionId, setDeleteRevealSessionId] = useState<string | null>(null);
 
   const [callActive, setCallActive] = useState(false);
   const [callMuted, setCallMuted] = useState(false);
@@ -659,6 +694,19 @@ export default function ChatPage() {
   const consecutiveCallErrorsRef = useRef(0);
   const searchInputRef = useRef<HTMLInputElement | null>(null);
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
+  const longPressTimerRef = useRef<number | null>(null);
+  const longPressTriggeredRef = useRef(false);
+
+  const clearLongPressTimer = useCallback(() => {
+    if (longPressTimerRef.current === null) {
+      return;
+    }
+
+    if (typeof window !== "undefined") {
+      window.clearTimeout(longPressTimerRef.current);
+    }
+    longPressTimerRef.current = null;
+  }, []);
 
   useEffect(() => {
     const restored = readStoredSessions();
@@ -705,6 +753,28 @@ export default function ChatPage() {
 
     searchInputRef.current?.focus();
   }, [searchOpen]);
+
+  useEffect(() => {
+    return () => {
+      clearLongPressTimer();
+    };
+  }, [clearLongPressTimer]);
+
+  useEffect(() => {
+    const onPointerDown = (event: PointerEvent) => {
+      const target = event.target as HTMLElement | null;
+      if (target?.closest(".gpt-recent-item")) {
+        return;
+      }
+
+      setDeleteRevealSessionId(null);
+    };
+
+    window.addEventListener("pointerdown", onPointerDown);
+    return () => {
+      window.removeEventListener("pointerdown", onPointerDown);
+    };
+  }, []);
 
   const activeSession = useMemo(
     () => sessions.find((session) => session.id === activeSessionId) ?? sessions[0] ?? null,
@@ -1054,6 +1124,60 @@ export default function ChatPage() {
     setLanguage(selected.language);
     setError("");
     setInput("");
+    setDeleteRevealSessionId(null);
+  }
+
+  function revealDeleteForSession(sessionId: string) {
+    setDeleteRevealSessionId(sessionId);
+  }
+
+  function startDeleteLongPress(sessionId: string) {
+    clearLongPressTimer();
+    longPressTriggeredRef.current = false;
+    longPressTimerRef.current = window.setTimeout(() => {
+      revealDeleteForSession(sessionId);
+      longPressTriggeredRef.current = true;
+      longPressTimerRef.current = null;
+    }, 520);
+  }
+
+  function deleteConversation(sessionId: string) {
+    if (callActiveRef.current && sessionId === activeSessionId) {
+      stopVoiceCall(uiCopy.voiceCallStoppedChatChanged);
+    }
+
+    const remaining = sessions
+      .filter((session) => session.id !== sessionId)
+      .sort((left, right) => new Date(right.updatedAt).getTime() - new Date(left.updatedAt).getTime())
+      .slice(0, MAX_SAVED_SESSIONS);
+
+    if (remaining.length === 0) {
+      const fallbackSession = createSession(languageRef.current);
+      fallbackSession.title = UI_COPY_BY_LANGUAGE[fallbackSession.language]?.newChat ?? fallbackSession.title;
+
+      setSessions([fallbackSession]);
+      setActiveSessionId(fallbackSession.id);
+      setLanguage(fallbackSession.language);
+      setDeleteRevealSessionId(null);
+      setInput("");
+      setError("");
+      return;
+    }
+
+    let nextActiveSessionId = activeSessionId;
+    let nextLanguage = language;
+
+    if (sessionId === activeSessionId) {
+      nextActiveSessionId = remaining[0].id;
+      nextLanguage = remaining[0].language;
+      setInput("");
+      setError("");
+    }
+
+    setSessions(remaining);
+    setActiveSessionId(nextActiveSessionId);
+    setLanguage(nextLanguage);
+    setDeleteRevealSessionId(null);
   }
 
   async function sendText(text: string) {
@@ -1115,7 +1239,12 @@ export default function ChatPage() {
 
   const renderComposer = (className?: string) => (
     <div className={`gpt-composer ${className ?? ""}`.trim()}>
-      <button type="button" className="gpt-composer-icon" onClick={createNewConversation} aria-label={uiCopy.newChat}>
+      <button
+        type="button"
+        className="gpt-composer-icon gpt-composer-plus-btn"
+        onClick={createNewConversation}
+        aria-label={uiCopy.newChat}
+      >
         +
       </button>
 
@@ -1134,7 +1263,7 @@ export default function ChatPage() {
 
       <button
         type="button"
-        className={`gpt-composer-icon ${callActive ? "gpt-composer-icon-active" : ""}`}
+        className={`gpt-composer-icon gpt-composer-mic-btn ${callActive ? "gpt-composer-icon-active" : ""}`}
         onClick={() => {
           if (callActive) {
             stopVoiceCall(uiCopy.voiceCallEnded);
@@ -1145,7 +1274,7 @@ export default function ChatPage() {
         }}
         aria-label={uiCopy.voiceLabel}
       >
-        mic
+        <MicIcon />
       </button>
 
       <button type="button" className="gpt-send-btn" onClick={submitInput} disabled={submitting}>
@@ -1199,17 +1328,66 @@ export default function ChatPage() {
             {filteredSessions.length === 0 ? <p className="gpt-recents-empty">{uiCopy.noChatsFound}</p> : null}
 
             {filteredSessions.map((session) => (
-              <button
+              <div
                 key={session.id}
-                type="button"
-                className={`gpt-recent-item ${session.id === activeSessionId ? "gpt-recent-item-active" : ""}`}
-                onClick={() => selectConversation(session.id)}
+                role="button"
+                tabIndex={0}
+                className={`gpt-recent-item ${session.id === activeSessionId ? "gpt-recent-item-active" : ""} ${
+                  deleteRevealSessionId === session.id ? "gpt-recent-item-delete-visible" : ""
+                }`}
+                onClick={() => {
+                  if (longPressTriggeredRef.current) {
+                    longPressTriggeredRef.current = false;
+                    return;
+                  }
+
+                  selectConversation(session.id);
+                }}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter" || event.key === " ") {
+                    event.preventDefault();
+                    selectConversation(session.id);
+                  }
+                }}
+                onContextMenu={(event) => {
+                  event.preventDefault();
+                  revealDeleteForSession(session.id);
+                }}
+                onTouchStart={() => startDeleteLongPress(session.id)}
+                onTouchEnd={() => {
+                  clearLongPressTimer();
+                }}
+                onTouchCancel={() => {
+                  clearLongPressTimer();
+                  longPressTriggeredRef.current = false;
+                }}
+                onTouchMove={() => {
+                  clearLongPressTimer();
+                }}
               >
-                <span className="gpt-recent-title">
-                  {session.messages.length === 0 ? UI_COPY_BY_LANGUAGE[session.language]?.newChat ?? session.title : session.title}
-                </span>
+                <div className="gpt-recent-title-row">
+                  <span className="gpt-recent-title">
+                    {session.messages.length === 0 ? UI_COPY_BY_LANGUAGE[session.language]?.newChat ?? session.title : session.title}
+                  </span>
+
+                  <button
+                    type="button"
+                    className="gpt-recent-delete-btn"
+                    aria-label="Delete chat"
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      deleteConversation(session.id);
+                    }}
+                    onPointerDown={(event) => {
+                      event.stopPropagation();
+                    }}
+                  >
+                    <DeleteChatIcon />
+                  </button>
+                </div>
+
                 <span className="gpt-recent-time">{new Date(session.updatedAt).toLocaleString()}</span>
-              </button>
+              </div>
             ))}
           </div>
         </aside>

@@ -1,8 +1,15 @@
 const Groq = require("groq-sdk");
 const { normalizeLanguage, getSupportedLanguages } = require("./sessionState");
+const { isPlatformGuideQuery } = require("./platformGuideKnowledge");
 
 const SUPPORTED_LANGUAGES = getSupportedLanguages();
-const SUPPORTED_INTENTS = ["PATIENT_STATUS", "ICU_SUMMARY", "LANGUAGE_SWITCH", "GENERAL_QUERY"];
+const SUPPORTED_INTENTS = [
+  "PATIENT_STATUS",
+  "ICU_SUMMARY",
+  "LANGUAGE_SWITCH",
+  "PLATFORM_GUIDE",
+  "GENERAL_QUERY",
+];
 const SUPPORTED_EMOTIONS = ["CALM", "ANXIOUS", "DISTRESSED", "ANGRY", "SAD", "NEUTRAL"];
 
 const LANGUAGE_LABELS = {
@@ -156,6 +163,16 @@ function detectIntentHeuristic(commandText) {
     };
   }
 
+  if (isPlatformGuideQuery(text)) {
+    return {
+      intent: "PLATFORM_GUIDE",
+      patientId: null,
+      language: requestedLanguage ? normalizeLanguage(requestedLanguage) : null,
+      emotion,
+      asksForSummary: false,
+    };
+  }
+
   if (asksPatientDetails) {
     return {
       intent: "PATIENT_STATUS",
@@ -238,6 +255,7 @@ Rules:
 - If user asks patient specific details, choose PATIENT_STATUS.
 - If user asks overall unit/ward/ICU counts or summary, choose ICU_SUMMARY.
 - If user asks to change language, choose LANGUAGE_SWITCH.
+- If user asks about Rapid AI features, website usage, API docs, API key, developer usage, hospital integration, WhatsApp alerts, or uniqueness in market, choose PLATFORM_GUIDE.
 - For greetings, free talk, motivation, complaints, or mixed queries, choose GENERAL_QUERY.
 - Extract patientId even from "pid 202" style mentions when possible.
 - If unclear, keep patientId null but do not force ICU_SUMMARY for unrelated questions.`,
@@ -285,6 +303,11 @@ Rules:
     intent = "GENERAL_QUERY";
   }
 
+  if (isPlatformGuideQuery(commandText) && intent !== "LANGUAGE_SWITCH") {
+    intent = "PLATFORM_GUIDE";
+    patientId = null;
+  }
+
   return {
     intent,
     patientId,
@@ -302,6 +325,7 @@ async function generateContextualReply({
   patient,
   summary,
   sessionHistory,
+  platformGuide,
 }) {
   const apiKey = process.env.GROQ_API_KEY;
   if (!apiKey) {
@@ -337,6 +361,7 @@ async function generateContextualReply({
         }
       : null,
     summary: summary || null,
+    platformGuide: platformGuide || null,
     sessionHistory: safeHistory,
   };
 
@@ -351,7 +376,9 @@ async function generateContextualReply({
 Always answer strictly in ${languageLabel} (${normalizedLanguage}) using native script where applicable.
 If user sounds distressed/anxious, acknowledge emotion briefly, then give clear actionable response.
 If question is non-ICU or casual, still answer politely and helpfully.
+If intent is PLATFORM_GUIDE, answer only from provided platformGuide context and explain requested topic clearly.
 Never invent patient vitals. Use provided context only.
+Do not claim integrations or features that are not present in context.
 Keep response concise, natural, and spoken-style (2-5 short sentences). No markdown.`,
       },
       {

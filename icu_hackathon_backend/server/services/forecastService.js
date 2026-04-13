@@ -1,5 +1,6 @@
 const DEFAULT_FORECAST_NEXT_URL = process.env.FORECAST_NEXT_URL || "http://localhost:8080/api/v1/forecast/next";
 const DEFAULT_FORECAST_HEALTH_URL = process.env.FORECAST_HEALTH_URL || "http://localhost:8080/health";
+const SERVICE_FORECAST_API_KEY = String(process.env.FORECAST_API_KEY || "").trim();
 
 function parseBoolean(value, fallback = false) {
   if (value === undefined || value === null || String(value).trim() === "") {
@@ -107,6 +108,19 @@ function heuristicForecastLevel({ heartRate, spo2, temperature, bloodPressure })
   return "STABLE";
 }
 
+function resolveForwardedApiKey(options = {}) {
+  const candidate = options?.apiKey;
+  const normalized = Array.isArray(candidate)
+    ? String(candidate[0] || "").trim()
+    : String(candidate || "").trim();
+
+  if (normalized) {
+    return normalized;
+  }
+
+  return SERVICE_FORECAST_API_KEY;
+}
+
 async function checkLegacyForecastHealth() {
   const timeout = withTimeoutSignal(REQUEST_TIMEOUT_MS);
   try {
@@ -167,7 +181,7 @@ async function initializeForecastService() {
   return startupStatus;
 }
 
-async function requestLegacyForecast({ heartRate, spo2, temperature, bloodPressure }) {
+async function requestLegacyForecast({ heartRate, spo2, temperature, bloodPressure }, options = {}) {
   const hr = toNumber(heartRate);
   const oxygen = toNumber(spo2);
   const temp = toNumber(temperature);
@@ -192,13 +206,20 @@ async function requestLegacyForecast({ heartRate, spo2, temperature, bloodPressu
   };
 
   const timeout = withTimeoutSignal(REQUEST_TIMEOUT_MS);
+  const forwardedApiKey = resolveForwardedApiKey(options);
+
+  const headers = {
+    "Content-Type": "application/json",
+  };
+
+  if (forwardedApiKey) {
+    headers["x-api-key"] = forwardedApiKey;
+  }
 
   try {
     const response = await fetch(DEFAULT_FORECAST_NEXT_URL, {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
+      headers,
       body: JSON.stringify(payload),
       signal: timeout.signal,
     });
@@ -221,7 +242,7 @@ async function requestLegacyForecast({ heartRate, spo2, temperature, bloodPressu
   }
 }
 
-async function predictRiskNextFiveMinutes(vitals) {
+async function predictRiskNextFiveMinutes(vitals, options = {}) {
   const heuristic = heuristicForecastLevel(vitals);
 
   if (!FORECAST_ENABLED) {
@@ -234,7 +255,7 @@ async function predictRiskNextFiveMinutes(vitals) {
   }
 
   try {
-    const mlForecast = await requestLegacyForecast(vitals);
+    const mlForecast = await requestLegacyForecast(vitals, options);
     startupStatus.ready = true;
     startupStatus.source = "legacy-ml";
     startupStatus.message = "Legacy ML forecast inference active";

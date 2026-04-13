@@ -78,7 +78,13 @@ GROQ_API_KEY=your_groq_api_key
 SUPABASE_URL=https://your-project-ref.supabase.co
 SUPABASE_SERVICE_ROLE_KEY=your_service_role_key
 SUPABASE_ANON_KEY=your_anon_key
+PROJECTION_FORECAST_CONCURRENCY=6
+PROJECTION_RETRY_BACKOFF_MS=140
 ```
+
+`PROJECTION_FORECAST_CONCURRENCY` controls how many patient forecast calls run in parallel for `/icu/forecast/projection`.
+Keep this in the 4-12 range for typical local systems; increase gradually on stronger hosts.
+`PROJECTION_RETRY_BACKOFF_MS` adds delay before retrying abort-only forecast failures to avoid retry spikes.
 
 Client .env.local:
 

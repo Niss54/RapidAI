@@ -379,6 +379,13 @@ export type ApiKeyRegenerateResponse = {
 
 const SERVER_BASE = process.env.NEXT_PUBLIC_SERVER_URL ?? "http://localhost:4000";
 const ANALYTICS_BASE = process.env.NEXT_PUBLIC_ANALYTICS_URL ?? "http://localhost:8080";
+const API_KEY_STORAGE_KEY = "rapidai-runtime-api-key";
+const API_KEY_USER_ID_STORAGE_KEY = "rapidai-api-access-user-id";
+const DEFAULT_API_KEY_USER_ID = "doctor-101";
+const PRECONFIGURED_API_KEY = String(process.env.NEXT_PUBLIC_API_KEY || "").trim();
+
+let cachedRuntimeApiKey: string | null = null;
+let inFlightApiKeyPromise: Promise<string | null> | null = null;
 
 function buildUrl(base: string, path: string): string {
   const normalizedBase = String(base || "").replace(/\/+$/, "");
@@ -389,19 +396,203 @@ function buildUrl(base: string, path: string): string {
   return `${normalizedBase}${path}`;
 }
 
-async function requestJsonFromBase<T>(base: string, path: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(buildUrl(base, path), {
-    ...init,
-    cache: "no-store",
-    headers: {
-      "Content-Type": "application/json",
-      ...(init?.headers ?? {}),
-    },
-  });
+function isBrowserEnvironment(): boolean {
+  return typeof window !== "undefined";
+}
 
-  const data = await response.json();
+function readStoredRuntimeApiKey(): string | null {
+  if (cachedRuntimeApiKey && cachedRuntimeApiKey.trim().length > 0) {
+    return cachedRuntimeApiKey;
+  }
+
+  if (isBrowserEnvironment()) {
+    const stored = String(window.localStorage.getItem(API_KEY_STORAGE_KEY) || "").trim();
+    if (stored) {
+      cachedRuntimeApiKey = stored;
+      return cachedRuntimeApiKey;
+    }
+  }
+
+  if (PRECONFIGURED_API_KEY) {
+    cachedRuntimeApiKey = PRECONFIGURED_API_KEY;
+    return cachedRuntimeApiKey;
+  }
+
+  return null;
+}
+
+function persistRuntimeApiKey(apiKey: string): void {
+  const normalized = String(apiKey || "").trim();
+  if (!normalized) {
+    return;
+  }
+
+  cachedRuntimeApiKey = normalized;
+
+  if (!isBrowserEnvironment()) {
+    return;
+  }
+
+  try {
+    window.localStorage.setItem(API_KEY_STORAGE_KEY, normalized);
+  } catch {
+    // Ignore storage quota/privacy mode issues.
+  }
+}
+
+function clearStoredRuntimeApiKey(): void {
+  cachedRuntimeApiKey = null;
+
+  if (!isBrowserEnvironment()) {
+    return;
+  }
+
+  try {
+    window.localStorage.removeItem(API_KEY_STORAGE_KEY);
+  } catch {
+    // Ignore storage quota/privacy mode issues.
+  }
+}
+
+function readHeaderApiKey(headers: Headers): string {
+  return String(headers.get("x-api-key") || "").trim();
+}
+
+function resolveRuntimeApiUserId(): string {
+  if (!isBrowserEnvironment()) {
+    return DEFAULT_API_KEY_USER_ID;
+  }
+
+  const stored = String(window.localStorage.getItem(API_KEY_USER_ID_STORAGE_KEY) || "").trim();
+  return stored || DEFAULT_API_KEY_USER_ID;
+}
+
+function isPublicApiPath(path: string): boolean {
+  const normalized = String(path || "").trim().toLowerCase();
+  return normalized === "/health" || normalized.startsWith("/api-key");
+}
+
+async function parseJsonPayload(response: Response): Promise<Record<string, unknown>> {
+  const body = await response.text();
+  if (!body) {
+    return {};
+  }
+
+  try {
+    const parsed = JSON.parse(body) as unknown;
+    if (parsed && typeof parsed === "object") {
+      return parsed as Record<string, unknown>;
+    }
+    return { value: parsed };
+  } catch {
+    return { error: body };
+  }
+}
+
+async function regenerateRuntimeApiKey(): Promise<string | null> {
+  if (inFlightApiKeyPromise) {
+    return inFlightApiKeyPromise;
+  }
+
+  inFlightApiKeyPromise = (async () => {
+    try {
+      const response = await fetch(buildUrl(SERVER_BASE, "/api-key/regenerate"), {
+        method: "POST",
+        cache: "no-store",
+        headers: {
+          "Content-Type": "application/json",
+          "x-user-id": resolveRuntimeApiUserId(),
+        },
+      });
+
+      const data = await parseJsonPayload(response);
+      if (!response.ok) {
+        return null;
+      }
+
+      const apiKey = String(data?.api_key || "").trim();
+      if (!apiKey) {
+        return null;
+      }
+
+      persistRuntimeApiKey(apiKey);
+      return apiKey;
+    } catch {
+      return null;
+    } finally {
+      inFlightApiKeyPromise = null;
+    }
+  })();
+
+  return inFlightApiKeyPromise;
+}
+
+async function requestJsonFromBase<T>(base: string, path: string, init?: RequestInit): Promise<T> {
+  const targetUrl = buildUrl(base, path);
+  const headers = new Headers(init?.headers ?? undefined);
+
+  if (!headers.has("Content-Type")) {
+    headers.set("Content-Type", "application/json");
+  }
+
+  const needsApiKey = !isPublicApiPath(path);
+
+  if (needsApiKey && !headers.has("x-api-key")) {
+    const existingApiKey = readStoredRuntimeApiKey();
+    if (existingApiKey) {
+      headers.set("x-api-key", existingApiKey);
+    } else {
+      const generatedApiKey = await regenerateRuntimeApiKey();
+      if (generatedApiKey) {
+        headers.set("x-api-key", generatedApiKey);
+      }
+    }
+  }
+
+  const originalRequestApiKey = readHeaderApiKey(headers);
+
+  const sendRequest = async () =>
+    fetch(targetUrl, {
+      ...init,
+      cache: "no-store",
+      headers,
+    });
+
+  let response = await sendRequest();
+  let data = await parseJsonPayload(response);
+
+  const supportsApiKeyRetry = (payload: Record<string, unknown>, status: number): boolean => {
+    const errorText = String(payload?.error || "").toLowerCase();
+    return status === 401 || status === 403 || errorText.includes("x-api-key") || errorText.includes("api key");
+  };
+
+  let canRetryWithFreshKey = needsApiKey && supportsApiKeyRetry(data, response.status);
+
+  if (canRetryWithFreshKey) {
+    const latestStoredApiKey = readStoredRuntimeApiKey();
+    if (latestStoredApiKey && latestStoredApiKey !== originalRequestApiKey) {
+      headers.set("x-api-key", latestStoredApiKey);
+      response = await sendRequest();
+      data = await parseJsonPayload(response);
+      canRetryWithFreshKey = needsApiKey && supportsApiKeyRetry(data, response.status);
+    }
+  }
+
+  if (canRetryWithFreshKey) {
+    const refreshedApiKey = await regenerateRuntimeApiKey();
+    if (refreshedApiKey && readHeaderApiKey(headers) !== refreshedApiKey) {
+      headers.set("x-api-key", refreshedApiKey);
+      response = await sendRequest();
+      data = await parseJsonPayload(response);
+    }
+  }
+
   if (!response.ok) {
-    throw new Error(data?.error ?? `Request failed for ${path}`);
+    if (needsApiKey && (response.status === 401 || response.status === 403)) {
+      clearStoredRuntimeApiKey();
+    }
+
+    throw new Error(String(data?.error || `Request failed for ${path}`));
   }
 
   return data as T;
@@ -544,11 +735,48 @@ export async function downloadForecastProjectionExport(
   query.set("format", format);
   appendForecastProjectionFilters(query, filters);
 
-  const response = await fetch(`${SERVER_BASE}/icu/forecast/projection/export?${query.toString()}`, {
-    cache: "no-store",
-  });
+  const headers = new Headers();
+  const initialApiKey = readStoredRuntimeApiKey();
+  if (initialApiKey) {
+    headers.set("x-api-key", initialApiKey);
+  } else {
+    const generatedApiKey = await regenerateRuntimeApiKey();
+    if (generatedApiKey) {
+      headers.set("x-api-key", generatedApiKey);
+    }
+  }
+
+  const sendRequest = async () =>
+    fetch(`${SERVER_BASE}/icu/forecast/projection/export?${query.toString()}`, {
+      cache: "no-store",
+      headers,
+    });
+
+  let response = await sendRequest();
+
+  if (response.status === 401 || response.status === 403) {
+    const usedApiKey = readHeaderApiKey(headers);
+    const latestStoredApiKey = readStoredRuntimeApiKey();
+
+    if (latestStoredApiKey && latestStoredApiKey !== usedApiKey) {
+      headers.set("x-api-key", latestStoredApiKey);
+      response = await sendRequest();
+    }
+  }
+
+  if (response.status === 401 || response.status === 403) {
+    const refreshedApiKey = await regenerateRuntimeApiKey();
+    if (refreshedApiKey && readHeaderApiKey(headers) !== refreshedApiKey) {
+      headers.set("x-api-key", refreshedApiKey);
+      response = await sendRequest();
+    }
+  }
 
   if (!response.ok) {
+    if (response.status === 401 || response.status === 403) {
+      clearStoredRuntimeApiKey();
+    }
+
     let message = `Request failed for projection export (${response.status})`;
     try {
       const data = await response.json();
@@ -708,4 +936,12 @@ export async function queryVoice(payload: {
     method: "POST",
     body: JSON.stringify(payload),
   });
+}
+
+export function setRuntimeApiKey(apiKey: string): void {
+  persistRuntimeApiKey(apiKey);
+}
+
+export function clearRuntimeApiKey(): void {
+  clearStoredRuntimeApiKey();
 }

@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -106,6 +107,7 @@ const REFRESH_INTERVAL_MS = 3000;
 const PROJECTION_REFRESH_VISIBLE_MS = 20000;
 const RISK_SCORE_LEGEND = "0-30 stable | 31-60 warning | 61-100 critical";
 const PROJECTION_REFRESH_HIDDEN_MS = 90000;
+const rapidLogoSrc = "/assets/rapid.png?v=20260409";
 
 type DashboardSectionId =
   | "icuSummary"
@@ -127,25 +129,30 @@ type DashboardSectionId =
   | "telemetryDebug"
   | "modelEvaluation";
 
-const DASHBOARD_SECTION_TABS: Array<{ id: DashboardSectionId; label: string }> = [
-  { id: "icuSummary", label: "ICU Summary" },
-  { id: "stats", label: "Stats Cards" },
-  { id: "patientOps", label: "Patient Snapshot + Push" },
-  { id: "hexDecoder", label: "Hex Decoder" },
-  { id: "identityCollision", label: "Identity Mapping" },
-  { id: "alertsTimeline", label: "Alerts Timeline" },
-  { id: "alertsStream", label: "Alerts Stream" },
-  { id: "telemetryTimeline", label: "Telemetry Timeline" },
-  { id: "stabilityTimeline", label: "Stability Timeline" },
-  { id: "timeline", label: "Timeline + Alerts" },
-  { id: "forecast", label: "Forecast Projections" },
-  { id: "voiceAssistant", label: "Voice Assistant" },
-  { id: "voiceLogs", label: "Voice Logs" },
-  { id: "voiceStatus", label: "Voice Service Status" },
-  { id: "integrationStatus", label: "Integration Status" },
-  { id: "endpointCoverage", label: "Endpoint Coverage" },
-  { id: "telemetryDebug", label: "Telemetry Debug" },
-  { id: "modelEvaluation", label: "Model Evaluation" },
+const DASHBOARD_SECTION_TABS: Array<{
+  id: DashboardSectionId;
+  label: string;
+  sticker: string;
+  stickerTone?: "default" | "stats" | "alert";
+}> = [
+  { id: "icuSummary", label: "ICU Summary", sticker: "LIVE CARE" },
+  { id: "stats", label: "Stats Cards", sticker: "STATS MATRICES", stickerTone: "stats" },
+  { id: "patientOps", label: "Patient Snapshot + Push", sticker: "TRIAGE" },
+  { id: "hexDecoder", label: "Hex Decoder", sticker: "RAW FEED" },
+  { id: "identityCollision", label: "Identity Mapping", sticker: "RESOLVE" },
+  { id: "alertsTimeline", label: "Alerts Timeline", sticker: "ALERT", stickerTone: "alert" },
+  { id: "alertsStream", label: "Alerts Stream", sticker: "ALERT", stickerTone: "alert" },
+  { id: "telemetryTimeline", label: "Telemetry Timeline", sticker: "VITAL TREND" },
+  { id: "stabilityTimeline", label: "Stability Timeline", sticker: "RISK FLOW" },
+  { id: "timeline", label: "Timeline + Alerts", sticker: "HISTORY" },
+  { id: "forecast", label: "Forecast Projections", sticker: "PREDICT" },
+  { id: "voiceAssistant", label: "Voice Assistant", sticker: "ASK AI" },
+  { id: "voiceLogs", label: "Voice Logs", sticker: "TRANSCRIPTS" },
+  { id: "voiceStatus", label: "Voice Service Status", sticker: "SERVICE" },
+  { id: "integrationStatus", label: "Integration Status", sticker: "CONNECT" },
+  { id: "endpointCoverage", label: "Endpoint Coverage", sticker: "API MAP" },
+  { id: "telemetryDebug", label: "Telemetry Debug", sticker: "DEBUG" },
+  { id: "modelEvaluation", label: "Model Evaluation", sticker: "MODEL QA" },
 ];
 
 function badgeClass(level: string): string {
@@ -350,6 +357,8 @@ export default function DashboardPage() {
   const router = useRouter();
   const [healthService, setHealthService] = useState("rapid-ai-server");
   const [isForecastReady, setIsForecastReady] = useState(false);
+  const [forecastSource, setForecastSource] = useState("unknown");
+  const [forecastStatusMessage, setForecastStatusMessage] = useState("");
   const [summaryData, setSummaryData] = useState<IcuSummaryResponse | null>(null);
   const [timelineEvents, setTimelineEvents] = useState<TimelineEvent[]>([]);
   const [forecastProjections, setForecastProjections] = useState<ForecastProjectionRecord[]>([]);
@@ -394,9 +403,12 @@ export default function DashboardPage() {
 
     setHealthService(health.service);
     setIsForecastReady(Boolean(health.forecast?.ready));
+    setForecastSource(String(health.forecast?.source || (health.forecast?.ready ? "legacy-ml" : "unknown")));
+    setForecastStatusMessage(String(health.forecast?.message || "").trim());
     setSummaryData(summary);
     setTimelineEvents(timeline.events || []);
     setLastUpdatedAt(new Date().toISOString());
+    setError("");
   }, []);
 
   const projectionFilters = useMemo(() => {
@@ -485,14 +497,32 @@ export default function DashboardPage() {
   }, []);
 
   useEffect(() => {
+    if (typeof document === "undefined") {
+      return;
+    }
+
+    document.documentElement.classList.add("dashboard-scrollbar-hidden");
+    document.body.classList.add("dashboard-scrollbar-hidden");
+
+    return () => {
+      document.documentElement.classList.remove("dashboard-scrollbar-hidden");
+      document.body.classList.remove("dashboard-scrollbar-hidden");
+    };
+  }, []);
+
+  useEffect(() => {
     void refresh().catch((err) => {
       setIsForecastReady(false);
+      setForecastSource("offline");
+      setForecastStatusMessage("Health refresh failed");
       setError(err instanceof Error ? err.message : "Could not load dashboard data");
     });
 
     const timer = setInterval(() => {
       void refresh().catch(() => {
         setIsForecastReady(false);
+        setForecastSource("offline");
+        setForecastStatusMessage("Health refresh failed");
       });
     }, REFRESH_INTERVAL_MS);
 
@@ -704,6 +734,10 @@ export default function DashboardPage() {
   );
 
   const patients = useMemo(() => summaryData?.patients ?? [], [summaryData]);
+  const selectedPatient = useMemo(
+    () => patients.find((patient) => patient.patientId === selectedPatientId) ?? null,
+    [patients, selectedPatientId]
+  );
 
   const escalationStrip = useMemo(() => {
     if (!lastTelemetryDiagnostics) {
@@ -784,6 +818,50 @@ export default function DashboardPage() {
     };
   }, [lastTelemetryDiagnostics]);
 
+  const forecastBadge = useMemo(() => {
+    const source = String(forecastSource || "").trim().toLowerCase();
+
+    if (source === "legacy-ml" && isForecastReady) {
+      return {
+        className: "border-emerald-500/40 bg-emerald-500/15 text-emerald-300",
+        label: "Forecast Ready",
+        hint: forecastStatusMessage || "ML forecast model is active",
+      };
+    }
+
+    if (source === "heuristic-fallback") {
+      return {
+        className: "border-amber-500/40 bg-amber-500/15 text-amber-300",
+        label: "Forecast Fallback",
+        hint:
+          forecastStatusMessage ||
+          "ML endpoint unavailable; deterministic fallback forecast is active",
+      };
+    }
+
+    if (source === "disabled") {
+      return {
+        className: "border-slate-500/35 bg-slate-500/15 text-slate-300",
+        label: "Forecast Disabled",
+        hint: forecastStatusMessage || "Forecast service disabled by configuration",
+      };
+    }
+
+    if (source === "legacy-ml") {
+      return {
+        className: "border-cyan-500/40 bg-cyan-500/15 text-cyan-200",
+        label: "Forecast Initializing",
+        hint: forecastStatusMessage || "ML service reachable but model is warming up",
+      };
+    }
+
+    return {
+      className: "border-rose-500/40 bg-rose-500/15 text-rose-300",
+      label: "Forecast Offline",
+      hint: forecastStatusMessage || "Forecast service health could not be resolved",
+    };
+  }, [forecastSource, forecastStatusMessage, isForecastReady]);
+
   return (
     <div className="page-shell pb-10">
       {successToast ? (
@@ -804,9 +882,30 @@ export default function DashboardPage() {
         <section className="surface p-6 md:p-8">
           <p className="kicker">Application Tracker</p>
           <div className="mt-2 flex flex-wrap items-start justify-between gap-4">
-            <div>
+            <div className="max-w-3xl space-y-4">
+              <div className="flex items-center gap-3">
+                <Image
+                  src={rapidLogoSrc}
+                  alt="Rapid AI logo"
+                  width={44}
+                  height={44}
+                  className="rounded-md object-cover"
+                  unoptimized
+                />
+                <div>
+                  <p className="text-sm font-semibold text-slate-100">Rapid AI Care Copilot</p>
+                  <p className="text-xs text-slate-400">Real-time ICU intelligence for decisive care actions.</p>
+                </div>
+              </div>
+
               <h1 className="text-4xl font-semibold">Rapid AI Dashboard</h1>
-              <p className="mt-2 muted">Track live patient load, risk distribution, and alert flow in one place.</p>
+              <p className="muted">Track live patient load, risk distribution, and alert flow in one place.</p>
+
+              <div className="space-y-2 text-sm leading-7 text-slate-200/95">
+                <p>Live telemetry, risk scoring, and 5-minute forecasting keep ICU teams ahead of deterioration.</p>
+                <p>Voice and dashboard workflows convert patient context into fast, clinically actionable updates.</p>
+                <p>Critical events sync to timeline, voice broadcast, and optional WhatsApp escalation for rapid response.</p>
+              </div>
             </div>
 
             <div className="rounded-xl border border-white/15 bg-white/[0.03] px-4 py-3 text-sm">
@@ -814,14 +913,11 @@ export default function DashboardPage() {
               <p className="mt-1 text-slate-400">Auto-refresh every 3 seconds</p>
                 <div className="mt-2">
                   <span
-                    className={`rounded-full border px-2.5 py-1 text-[11px] font-semibold ${
-                      isForecastReady
-                        ? "border-emerald-500/40 bg-emerald-500/15 text-emerald-300"
-                        : "border-rose-500/40 bg-rose-500/15 text-rose-300"
-                    }`}
+                    className={`rounded-full border px-2.5 py-1 text-[11px] font-semibold ${forecastBadge.className}`}
                   >
-                    {isForecastReady ? "Forecast Ready" : "Forecast Offline"}
+                    {forecastBadge.label}
                   </span>
+                  <p className="mt-1 max-w-xs text-[11px] leading-5 text-slate-500">{forecastBadge.hint}</p>
                 </div>
               <div className="mt-3 border-t border-white/10 pt-3">
                 <p className="text-[11px] uppercase tracking-[0.16em] text-slate-500">Forecast Source Split</p>
@@ -850,25 +946,39 @@ export default function DashboardPage() {
           <div className="dashboard-tabs-track flex gap-2 overflow-x-auto pb-1">
             {DASHBOARD_SECTION_TABS.map((tab) => {
               const isActive = activeSection === tab.id;
+              const stickerClass =
+                tab.stickerTone === "alert"
+                  ? isActive
+                    ? "border-rose-400/50 bg-rose-500/20 text-rose-100"
+                    : "border-rose-500/30 bg-rose-500/10 text-rose-300"
+                  : tab.stickerTone === "stats"
+                    ? isActive
+                      ? "border-violet-400/45 bg-violet-500/20 text-violet-100"
+                      : "border-violet-500/30 bg-violet-500/10 text-violet-300"
+                    : isActive
+                      ? "border-cyan-400/45 bg-cyan-500/15 text-cyan-100"
+                      : "border-white/20 bg-white/[0.03] text-slate-400";
+
               return (
                 <button
                   key={tab.id}
                   type="button"
+                  suppressHydrationWarning
                   onClick={() => setActiveSection(tab.id)}
-                  className={`rounded-lg border px-3 py-2 text-xs font-semibold whitespace-nowrap transition ${
+                  className={`dashboard-tab-button rounded-full border px-5 py-2.5 text-sm font-semibold whitespace-nowrap transition ${
                     isActive
                       ? "border-cyan-500/50 bg-cyan-500/20 text-cyan-100"
-                      : "border-white/15 bg-white/[0.03] text-slate-300 hover:border-cyan-500/35 hover:text-cyan-200"
+                      : "border-white/20 bg-white/[0.03] text-slate-300 hover:border-cyan-500/35 hover:text-cyan-200"
                   }`}
                 >
-                  {tab.label}
+                  <span className="block leading-tight">{tab.label}</span>
+                  <span className={`mt-1.5 inline-flex rounded-full border px-2.5 py-0.5 text-[10px] font-semibold tracking-[0.08em] ${stickerClass}`}>
+                    {tab.sticker}
+                  </span>
                 </button>
               );
             })}
           </div>
-          <p className="mt-2 text-xs text-slate-500">
-            Top buttons se section choose karo. Ek time par ek section dikh raha hai, isliye deep scroll ki zarurat nahi.
-          </p>
         </section>
 
         {activeSection === "stats" ? (
@@ -899,13 +1009,14 @@ export default function DashboardPage() {
         {activeSection === "icuSummary" ? <ICUSummaryPanel /> : null}
 
         {activeSection === "patientOps" ? (
-          <section className="grid gap-4 lg:grid-cols-[0.62fr_0.38fr]">
-            <article className="surface p-5">
+          <section className="space-y-4">
+            <div className="grid items-start gap-4">
+              <article className="surface p-5">
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <h2 className="text-2xl font-semibold">Patient Snapshot</h2>
                 <div className="flex flex-wrap items-center gap-2">
                   <input
-                    className="input-dark min-w-52 rounded-xl px-3 py-2 text-sm"
+                    className="input-dark min-w-64 rounded-xl px-3 py-2 text-sm sm:min-w-72"
                     placeholder="Search patient ID"
                     value={patientProfileSearchId}
                     onChange={(event) => setPatientProfileSearchId(event.target.value)}
@@ -946,183 +1057,197 @@ export default function DashboardPage() {
                 <span className="rounded-full border border-emerald-500/45 bg-emerald-500/15 px-3 py-1 text-emerald-300">Green Stable</span>
               </div>
 
-              <div className="mt-4 grid gap-3 md:grid-cols-2">
-                {patients.length === 0 ? (
-                  <p className="feature-card p-4 text-sm muted md:col-span-2">No patient data yet. Push telemetry to start.</p>
-                ) : (
-                  patients.map((patient) => (
-                    <article key={patient.patientId} className="feature-card p-4">
-                      <div className="flex items-center justify-between gap-3">
-                        <p className="text-lg font-semibold text-slate-100">Patient {patient.patientId}</p>
-                        <div className="flex items-center gap-2">
-                          <span className={`rounded-full border px-3 py-1 text-xs font-semibold ${telemetrySourceBadgeClass(patient.telemetrySource)}`}>
-                            Source: {toTelemetrySourceLabel(patient.telemetrySource)}
-                          </span>
-                          <span className={`rounded-full border px-3 py-1 text-xs font-semibold ${badgeClass(patient.riskLevel)}`}>
-                            {patient.riskLevel}
-                          </span>
-                          <button
-                            type="button"
-                            className={`rounded-full border px-3 py-1 text-[11px] font-semibold transition ${
-                              selectedPatientId === patient.patientId
-                                ? "border-cyan-500/45 bg-cyan-500/15 text-cyan-100"
-                                : "border-white/20 bg-white/[0.03] text-slate-300 hover:border-cyan-500/35 hover:text-cyan-200"
-                            }`}
-                            onClick={() => setSelectedPatientId(patient.patientId)}
-                          >
-                            {selectedPatientId === patient.patientId ? "Selected" : "Select"}
-                          </button>
-                          <Link
-                            href={`/patients/${encodeURIComponent(patient.patientId)}`}
-                            className="rounded-full border border-cyan-500/35 bg-cyan-500/10 px-3 py-1 text-[11px] font-semibold text-cyan-200 transition hover:border-cyan-400/60"
-                          >
-                            Open Profile
-                          </Link>
-                        </div>
-                      </div>
-                      <div className="mt-3 grid gap-1 text-sm text-slate-300">
-                        <p>HR: {patient.heartRate}</p>
-                        <p>SpO2: {patient.spo2}</p>
-                        <p>Temp: {patient.temperature}</p>
-                        <p>BP: {patient.bloodPressure}</p>
-                        <p>
-                          Risk Score:{" "}
-                          <span
-                            className="font-semibold text-violet-300 underline decoration-dotted underline-offset-2"
-                            title={RISK_SCORE_LEGEND}
-                          >
-                            {Math.round(Number(patient.riskScore) || 0)}/100
-                          </span>
-                        </p>
-                        <p>
-                          Predicted Risk Next 5 Minutes:{" "}
-                          <span className="font-semibold text-cyan-300">{patient.predictedRiskNext5Minutes}</span>
-                        </p>
-                      </div>
+                <p className="mt-4 text-sm text-slate-400">
+                  Select any patient card below to sync risk explanation and forecast widgets.
+                </p>
+              </article>
 
-                      <div className="mt-3">
-                        <p className="mb-1 text-xs uppercase tracking-[0.18em] text-slate-500">Risk Trend</p>
-                        <RiskTrendChart
-                          values={riskHistoryByPatient[patient.patientId] ?? [clampRiskScore(patient.riskScore)]}
-                        />
-                      </div>
-
-                      {selectedPatientId === patient.patientId ? (
-                        <ForecastWidget
-                          patientId={patient.patientId}
-                          heartRate={patient.heartRate}
-                          spo2={patient.spo2}
-                          temperature={patient.temperature}
-                          bloodPressure={patient.bloodPressure}
-                          currentRiskScore={patient.riskScore}
-                        />
-                      ) : null}
-
-                      <p className="mt-2 text-xs text-slate-500">Updated: {new Date(patient.lastUpdated).toLocaleString()}</p>
-                    </article>
-                  ))
-                )}
-              </div>
-            </article>
-
-            <aside className="surface p-5">
+              <aside className="surface p-5">
               <h2 className="text-2xl font-semibold">Push Telemetry</h2>
               <p className="mt-2 text-sm muted">Send structured vitals or paste hexadecimal telemetry payload directly.</p>
 
-              <div className="mt-4">
-                <SimulatorToggle />
-              </div>
+              <div className="mt-4 grid items-start gap-4 xl:grid-cols-[1.35fr_0.65fr]">
+                <div className="space-y-4">
+                  <SimulatorToggle />
 
-              <form className="mt-4 grid gap-3" onSubmit={(event) => void handleSubmit(event)}>
-                <input
-                  className="input-dark rounded-xl px-3 py-2 text-sm"
-                  placeholder="Patient ID"
-                  value={form.patientId}
-                  onChange={(event) => setForm((prev) => ({ ...prev, patientId: event.target.value }))}
-                />
-                <input
-                  className="input-dark rounded-xl px-3 py-2 text-sm"
-                  placeholder="Monitor ID"
-                  value={form.monitorId}
-                  onChange={(event) => setForm((prev) => ({ ...prev, monitorId: event.target.value }))}
-                />
-                <div className="grid grid-cols-3 gap-2">
-                  <input
-                    className="input-dark rounded-xl px-3 py-2 text-sm"
-                    placeholder="HR"
-                    value={form.heartRate}
-                    onChange={(event) => setForm((prev) => ({ ...prev, heartRate: event.target.value }))}
-                  />
-                  <input
-                    className="input-dark rounded-xl px-3 py-2 text-sm"
-                    placeholder="SpO2"
-                    value={form.spo2}
-                    onChange={(event) => setForm((prev) => ({ ...prev, spo2: event.target.value }))}
-                  />
-                  <input
-                    className="input-dark rounded-xl px-3 py-2 text-sm"
-                    placeholder="Temp"
-                    value={form.temperature}
-                    onChange={(event) => setForm((prev) => ({ ...prev, temperature: event.target.value }))}
+                  <form className="grid gap-2 md:grid-cols-2 xl:grid-cols-3" onSubmit={(event) => void handleSubmit(event)}>
+                    <input
+                      className="input-dark rounded-xl px-3 py-2 text-sm"
+                      placeholder="Patient ID"
+                      value={form.patientId}
+                      onChange={(event) => setForm((prev) => ({ ...prev, patientId: event.target.value }))}
+                    />
+                    <input
+                      className="input-dark rounded-xl px-3 py-2 text-sm"
+                      placeholder="Monitor ID"
+                      value={form.monitorId}
+                      onChange={(event) => setForm((prev) => ({ ...prev, monitorId: event.target.value }))}
+                    />
+                    <div className="grid grid-cols-3 gap-2 md:col-span-2 xl:col-span-1">
+                      <input
+                        className="input-dark rounded-xl px-3 py-2 text-sm"
+                        placeholder="HR"
+                        value={form.heartRate}
+                        onChange={(event) => setForm((prev) => ({ ...prev, heartRate: event.target.value }))}
+                      />
+                      <input
+                        className="input-dark rounded-xl px-3 py-2 text-sm"
+                        placeholder="SpO2"
+                        value={form.spo2}
+                        onChange={(event) => setForm((prev) => ({ ...prev, spo2: event.target.value }))}
+                      />
+                      <input
+                        className="input-dark rounded-xl px-3 py-2 text-sm"
+                        placeholder="Temp"
+                        value={form.temperature}
+                        onChange={(event) => setForm((prev) => ({ ...prev, temperature: event.target.value }))}
+                      />
+                    </div>
+                    <input
+                      className="input-dark rounded-xl px-3 py-2 text-sm"
+                      placeholder="BP"
+                      value={form.bloodPressure}
+                      onChange={(event) => setForm((prev) => ({ ...prev, bloodPressure: event.target.value }))}
+                    />
+
+                    <textarea
+                      className="input-dark min-h-20 rounded-xl px-3 py-2 text-sm md:col-span-2 xl:col-span-3"
+                      placeholder="Hex telemetry payload (optional). If provided, decoder will extract HR, SpO2, Temp, BP before risk analysis."
+                      value={form.telemetryHex}
+                      onChange={(event) => setForm((prev) => ({ ...prev, telemetryHex: event.target.value }))}
+                    />
+
+                    <p className="text-xs text-slate-500 md:col-span-2 xl:col-span-3">
+                      Hex mode: keep Patient ID + Hex payload. Structured fields are optional when hex is present.
+                    </p>
+
+                    <button
+                      type="submit"
+                      className="btn-base btn-green px-4 py-2 text-sm md:col-span-2 xl:col-span-3"
+                      disabled={submitting}
+                    >
+                      {submitting ? "Submitting..." : "Push Telemetry"}
+                    </button>
+                  </form>
+
+                  {escalationStrip ? (
+                    <div className="rounded-xl border border-white/10 bg-black/20 p-3">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <p className="text-xs uppercase tracking-[0.16em] text-slate-500">Last Escalation Diagnostics</p>
+                        <span className="text-[11px] text-slate-500">{escalationStrip.capturedAtLabel}</span>
+                      </div>
+
+                      <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
+                        <span className={`rounded-full border px-3 py-1 font-semibold ${escalationStrip.voice.className}`}>
+                          Voice: {escalationStrip.voice.label}
+                        </span>
+                        <span className={`rounded-full border px-3 py-1 font-semibold ${escalationStrip.dashboard.className}`}>
+                          Dashboard: {escalationStrip.dashboard.label}
+                        </span>
+                        <span className={`rounded-full border px-3 py-1 font-semibold ${escalationStrip.whatsapp.className}`}>
+                          WhatsApp: {escalationStrip.whatsapp.label}
+                        </span>
+                      </div>
+                    </div>
+                  ) : null}
+                </div>
+
+                <div className="grid gap-2">
+                  <RiskExplanationPanel
+                    patientId={selectedPatientId}
+                    fallbackVitals={
+                      selectedPatient
+                        ? {
+                            heartRate: selectedPatient.heartRate,
+                            spo2: selectedPatient.spo2,
+                            temperature: selectedPatient.temperature,
+                            bloodPressure: selectedPatient.bloodPressure,
+                          }
+                        : null
+                    }
                   />
                 </div>
-                <input
-                  className="input-dark rounded-xl px-3 py-2 text-sm"
-                  placeholder="BP"
-                  value={form.bloodPressure}
-                  onChange={(event) => setForm((prev) => ({ ...prev, bloodPressure: event.target.value }))}
-                />
-
-                <textarea
-                  className="input-dark min-h-24 rounded-xl px-3 py-2 text-sm"
-                  placeholder="Hex telemetry payload (optional). If provided, decoder will extract HR, SpO2, Temp, BP before risk analysis."
-                  value={form.telemetryHex}
-                  onChange={(event) => setForm((prev) => ({ ...prev, telemetryHex: event.target.value }))}
-                />
-
-                <p className="text-xs text-slate-500">
-                  Hex mode: keep Patient ID + Hex payload. Structured fields are optional when hex is present.
-                </p>
-
-                <button type="submit" className="btn-base btn-green px-4 py-2 text-sm" disabled={submitting}>
-                  {submitting ? "Submitting..." : "Push Telemetry"}
-                </button>
-              </form>
-
-              {escalationStrip ? (
-                <div className="mt-4 rounded-xl border border-white/10 bg-black/20 p-3">
-                  <div className="flex flex-wrap items-center justify-between gap-2">
-                    <p className="text-xs uppercase tracking-[0.16em] text-slate-500">Last Escalation Diagnostics</p>
-                    <span className="text-[11px] text-slate-500">{escalationStrip.capturedAtLabel}</span>
-                  </div>
-
-                  <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
-                    <span className={`rounded-full border px-3 py-1 font-semibold ${escalationStrip.voice.className}`}>
-                      Voice: {escalationStrip.voice.label}
-                    </span>
-                    <span className={`rounded-full border px-3 py-1 font-semibold ${escalationStrip.dashboard.className}`}>
-                      Dashboard: {escalationStrip.dashboard.label}
-                    </span>
-                    <span className={`rounded-full border px-3 py-1 font-semibold ${escalationStrip.whatsapp.className}`}>
-                      WhatsApp: {escalationStrip.whatsapp.label}
-                    </span>
-                  </div>
-                </div>
-              ) : null}
-
-              <div className="mt-5 grid gap-2">
-                <RiskExplanationPanel patientId={selectedPatientId} />
-
-                <Link href="/chat" className="quick-card flex items-center justify-between p-3 text-sm">
-                  <span>Open Patient Chat</span>
-                  <span className="text-slate-500">\u2192</span>
-                </Link>
-                <Link href="/" className="quick-card flex items-center justify-between p-3 text-sm">
-                  <span>Back To Home</span>
-                  <span className="text-slate-500">\u2192</span>
-                </Link>
               </div>
-            </aside>
+              </aside>
+            </div>
+
+            <div className="grid gap-4 md:grid-cols-2">
+              {patients.length === 0 ? (
+                <p className="feature-card p-4 text-sm muted md:col-span-2">No patient data yet. Push telemetry to start.</p>
+              ) : (
+                patients.map((patient) => (
+                  <article key={patient.patientId} className="feature-card p-4">
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                      <p className="max-w-full break-words text-lg font-semibold text-slate-100">Patient {patient.patientId}</p>
+                      <div className="flex flex-wrap items-center justify-end gap-2">
+                        <span className={`rounded-full border px-3 py-1 text-xs font-semibold ${telemetrySourceBadgeClass(patient.telemetrySource)}`}>
+                          Source: {toTelemetrySourceLabel(patient.telemetrySource)}
+                        </span>
+                        <span className={`rounded-full border px-3 py-1 text-xs font-semibold ${badgeClass(patient.riskLevel)}`}>
+                          {patient.riskLevel}
+                        </span>
+                        <button
+                          type="button"
+                          className={`rounded-full border px-3 py-1 text-[11px] font-semibold transition ${
+                            selectedPatientId === patient.patientId
+                              ? "border-cyan-500/45 bg-cyan-500/15 text-cyan-100"
+                              : "border-white/20 bg-white/[0.03] text-slate-300 hover:border-cyan-500/35 hover:text-cyan-200"
+                          }`}
+                          onClick={() => setSelectedPatientId(patient.patientId)}
+                        >
+                          {selectedPatientId === patient.patientId ? "Selected" : "Select"}
+                        </button>
+                        <Link
+                          href={`/patients/${encodeURIComponent(patient.patientId)}`}
+                          className="rounded-full border border-cyan-500/35 bg-cyan-500/10 px-3 py-1 text-[11px] font-semibold text-cyan-200 transition hover:border-cyan-400/60"
+                        >
+                          Open Profile
+                        </Link>
+                      </div>
+                    </div>
+                    <div className="mt-3 grid gap-1 text-sm text-slate-300">
+                      <p>HR: {patient.heartRate}</p>
+                      <p>SpO2: {patient.spo2}</p>
+                      <p>Temp: {patient.temperature}</p>
+                      <p>BP: {patient.bloodPressure}</p>
+                      <p>
+                        Risk Score:{" "}
+                        <span
+                          className="font-semibold text-violet-300 underline decoration-dotted underline-offset-2"
+                          title={RISK_SCORE_LEGEND}
+                        >
+                          {Math.round(Number(patient.riskScore) || 0)}/100
+                        </span>
+                      </p>
+                      <p>
+                        Predicted Risk Next 5 Minutes:{" "}
+                        <span className="font-semibold text-cyan-300">{patient.predictedRiskNext5Minutes}</span>
+                      </p>
+                    </div>
+
+                    <div className="mt-3">
+                      <p className="mb-1 text-xs uppercase tracking-[0.18em] text-slate-500">Risk Trend</p>
+                      <RiskTrendChart
+                        values={riskHistoryByPatient[patient.patientId] ?? [clampRiskScore(patient.riskScore)]}
+                      />
+                    </div>
+
+                    {selectedPatientId === patient.patientId ? (
+                      <ForecastWidget
+                        patientId={patient.patientId}
+                        heartRate={patient.heartRate}
+                        spo2={patient.spo2}
+                        temperature={patient.temperature}
+                        bloodPressure={patient.bloodPressure}
+                        currentRiskScore={patient.riskScore}
+                      />
+                    ) : null}
+
+                    <p className="mt-2 text-xs text-slate-500">Updated: {new Date(patient.lastUpdated).toLocaleString()}</p>
+                  </article>
+                ))
+              )}
+            </div>
           </section>
         ) : null}
 

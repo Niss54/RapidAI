@@ -41,7 +41,12 @@ def create_app() -> Flask:
     configure_logging(settings.debug)
 
     app = Flask(__name__)
-    CORS(app, resources={r"*": {"origins": settings.cors_origins}})
+    CORS(
+        app,
+        resources={r"*": {"origins": settings.cors_origins}},
+        allow_headers=["Content-Type", "Authorization", "X-API-Key", "x-api-key"],
+        methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    )
     app.config["SETTINGS"] = settings
     app.extensions["services"] = _build_services(settings)
 

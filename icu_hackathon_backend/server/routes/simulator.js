@@ -7,8 +7,19 @@ const {
 
 const router = express.Router();
 
-router.post("/start", (_req, res) => {
-  const status = startSimulation();
+function readHeaderApiKey(req) {
+  const raw = req?.headers?.["x-api-key"];
+  if (Array.isArray(raw)) {
+    return String(raw[0] || "").trim();
+  }
+
+  return String(raw || "").trim();
+}
+
+router.post("/start", (req, res) => {
+  const status = startSimulation({
+    apiKey: readHeaderApiKey(req),
+  });
   return res.status(200).json(status);
 });
 
