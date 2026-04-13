@@ -234,6 +234,26 @@ function alertLockText(alertState, language) {
   );
 }
 
+const ALERT_LOCK_CLINICAL_PATTERN =
+  /\b(patient|pt|mrn|pid|icu|telemetry|spo2|bp|heart\s*rate|temperature|risk|summary|alert|critical|emergency|escalation|ventilator|oxygen)\b/i;
+
+function shouldBypassAlertLockForText(text) {
+  if (!text || typeof text !== "string") {
+    return false;
+  }
+
+  const normalized = text
+    .replace(/\[System instruction:[\s\S]*$/i, "")
+    .trim()
+    .toLowerCase();
+
+  if (!normalized) {
+    return false;
+  }
+
+  return !ALERT_LOCK_CLINICAL_PATTERN.test(normalized);
+}
+
 const PATIENT_ID_STOPWORDS = new Set([
   "ka",
   "ke",
@@ -553,7 +573,7 @@ async function processVoiceQuery({ audioBuffer, text, language, userId }) {
   const sessionHistory = getConversationHistory(sessionId, 8);
   const alertState = getAlertMode();
 
-  if (alertState.active) {
+  if (alertState.active && !shouldBypassAlertLockForText(text)) {
     const responseLanguage = normalizeLanguage(alertState.language || activeLanguage);
     const transcript = text && text.trim().length > 0 ? text.trim() : "[input-blocked-during-alert]";
     const responseText = alertLockText(alertState, responseLanguage);

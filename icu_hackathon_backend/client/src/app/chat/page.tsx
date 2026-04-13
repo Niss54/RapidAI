@@ -3,13 +3,19 @@
 import Image from "next/image";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { queryVoice, toDataUrl, VoiceLanguage, VoiceQueryResponse } from "@/lib/api";
+import VoiceCallPostConnectUI, {
+  type VoicePostConnectLanguage,
+  type VoicePostConnectStatus,
+} from "@/components/chat/VoiceCallPostConnectUI";
 
 const SERVER_BASE = process.env.NEXT_PUBLIC_SERVER_URL ?? "http://localhost:4000";
 const SESSION_STORAGE_KEY = "rapidai-chat-sessions-v3";
 const MAX_SAVED_SESSIONS = 120;
 const RAPID_LOGO_SRC = "/assets/rapid.png?v=20260409";
 
-const LANGUAGE_OPTIONS: Array<{ code: VoiceLanguage; label: string }> = [
+type UiLanguage = VoicePostConnectLanguage;
+
+const LANGUAGE_OPTIONS: Array<{ code: UiLanguage; label: string }> = [
   { code: "en", label: "English" },
   { code: "hi", label: "Hindi" },
   { code: "bn", label: "Bengali" },
@@ -22,6 +28,8 @@ const LANGUAGE_OPTIONS: Array<{ code: VoiceLanguage; label: string }> = [
   { code: "pa", label: "Punjabi" },
   { code: "ur", label: "Urdu" },
   { code: "or", label: "Odia" },
+  { code: "as", label: "Assamese" },
+  { code: "ne", label: "Nepali" },
 ];
 
 type ChatMessage = {
@@ -35,7 +43,7 @@ type ChatMessage = {
 type ChatSession = {
   id: string;
   title: string;
-  language: VoiceLanguage;
+  language: UiLanguage;
   updatedAt: string;
   messages: ChatMessage[];
 };
@@ -62,7 +70,7 @@ type UiCopy = {
   voiceCallPausedOffline: string;
 };
 
-const UI_COPY_BY_LANGUAGE: Record<VoiceLanguage, UiCopy> = {
+const UI_COPY_BY_LANGUAGE: Record<UiLanguage, UiCopy> = {
   en: {
     subtitle: "Rapid AI can help with patient status, ICU summaries, risk explanations, and escalation guidance.",
     placeholder: "Ask anything",
@@ -315,20 +323,91 @@ const UI_COPY_BY_LANGUAGE: Record<VoiceLanguage, UiCopy> = {
     voiceCallStoppedChatChanged: "ଚାଟ୍ ପରିବର୍ତ୍ତନ ହେବାରୁ ଭୋଇସ୍ କଲ୍ ବନ୍ଦ ହେଲା।",
     voiceCallPausedOffline: "ବ୍ୟାକଏଣ୍ଡ ଅଫଲାଇନ ଥିବାରୁ ଭୋଇସ୍ କଲ୍ ବନ୍ଦ ହେଲା।",
   },
+  as: {
+    subtitle: "Rapid AI ৰোগীৰ অৱস্থা, ICU summary, risk analysis আৰু escalation guidance ত সহায় কৰে।",
+    placeholder: "যিকোনো প্ৰশ্ন সোধক",
+    patientChat: "ৰোগী চেট",
+    startVoiceCall: "ভইচ কল আৰম্ভ কৰক",
+    endVoiceCall: "ভইচ কল বন্ধ কৰক",
+    home: "হোম",
+    newChat: "নতুন চেট",
+    searchChats: "চেট সন্ধান কৰক",
+    searchPlaceholder: "চেট সন্ধান কৰক",
+    recents: "শেহতীয়া",
+    noChatsFound: "কোনো চেট পোৱা নগ'ল।",
+    send: "পঠিয়াওক",
+    thinking: "Rapid AI ভাবি আছে...",
+    voiceLabel: "ভইচ",
+    voiceCallStarted: "ভইচ কল আৰম্ভ হৈছে।",
+    voiceCallEnded: "ভইচ কল শেষ হৈছে।",
+    voiceCallStoppedNewChat: "নতুন চেট খোলাৰ বাবে ভইচ কল বন্ধ কৰা হৈছে।",
+    voiceCallStoppedChatChanged: "চেট সলনি হোৱাৰ বাবে ভইচ কল বন্ধ কৰা হৈছে।",
+    voiceCallPausedOffline: "backend offline হোৱাৰ বাবে ভইচ কল ৰখা হৈছে।",
+  },
+  ne: {
+    subtitle: "Rapid AI ले बिरामीको अवस्था, ICU सारांश, जोखिम विश्लेषण र escalation guidance मा सहयोग गर्छ।",
+    placeholder: "जे पनि सोध्नुहोस्",
+    patientChat: "बिरामी च्याट",
+    startVoiceCall: "भ्वाइस कल सुरु गर्नुहोस्",
+    endVoiceCall: "भ्वाइस कल बन्द गर्नुहोस्",
+    home: "होम",
+    newChat: "नयाँ च्याट",
+    searchChats: "च्याट खोज्नुहोस्",
+    searchPlaceholder: "च्याट खोज्नुहोस्",
+    recents: "हालसालै",
+    noChatsFound: "कुनै च्याट भेटिएन।",
+    send: "पठाउनुहोस्",
+    thinking: "Rapid AI सोच्दैछ...",
+    voiceLabel: "भ्वाइस",
+    voiceCallStarted: "भ्वाइस कल सुरु भयो।",
+    voiceCallEnded: "भ्वाइस कल समाप्त भयो।",
+    voiceCallStoppedNewChat: "नयाँ च्याट सुरु भएकाले भ्वाइस कल रोकियो।",
+    voiceCallStoppedChatChanged: "च्याट परिवर्तन भएकाले भ्वाइस कल रोकियो।",
+    voiceCallPausedOffline: "backend offline भएकाले भ्वाइस कल रोकियो।",
+  },
 };
 
 const LANGUAGE_CODES = new Set(LANGUAGE_OPTIONS.map((option) => option.code));
 const BACKEND_UNAVAILABLE_TEXT = "Backend is not reachable on port 4000. Start the stack and try again.";
 
-const LANGUAGE_LABEL_BY_CODE: Record<VoiceLanguage, string> = LANGUAGE_OPTIONS.reduce(
+const LANGUAGE_LABEL_BY_CODE: Record<UiLanguage, string> = LANGUAGE_OPTIONS.reduce(
   (acc, option) => ({
     ...acc,
     [option.code]: option.label,
   }),
-  {} as Record<VoiceLanguage, string>
+  {} as Record<UiLanguage, string>
 );
 
-function strictLanguageInstruction(language: VoiceLanguage): string {
+const MUTED_REMINDER_BY_LANGUAGE: Record<UiLanguage, string> = {
+  en: "You muted the microphone. No problem, I am waiting.",
+  hi: "लगता है आपने म्यूट कर दिया है, कोई बात नहीं, मैं प्रतीक्षा कर रही हूं।",
+  bn: "আপনি মাইক মিউট করেছেন, সমস্যা নেই, আমি অপেক্ষা করছি।",
+  ta: "நீங்கள் மைக் மியூட் செய்துள்ளீர்கள், பிரச்சனை இல்லை, நான் காத்திருக்கிறேன்.",
+  te: "మీరు మైక్ మ్యూట్ చేశారు, పరవాలేదు, నేను వేచి ఉంటాను.",
+  mr: "तुम्ही माइक म्यूट केला आहे, काही हरकत नाही, मी प्रतीक्षा करते आहे.",
+  gu: "તમે માઇક મ્યૂટ કર્યો છે, કોઈ વાંધો નહીં, હું રાહ જોઈ રહી છું.",
+  kn: "ನೀವು ಮೈಕ್ ಮ್ಯೂಟ್ ಮಾಡಿದ್ದಾರೆ, ಪರವಾಗಿಲ್ಲ, ನಾನು ಕಾಯುತ್ತಿದ್ದೇನೆ.",
+  ml: "നിങ്ങൾ മൈക്ക് മ്യൂട്ട് ചെയ്തിരിക്കുന്നു, പ്രശ്നമില്ല, ഞാൻ കാത്തിരിക്കുന്നു.",
+  pa: "ਤੁਸੀਂ ਮਾਈਕ ਮਿਊਟ ਕੀਤਾ ਹੈ, ਕੋਈ ਗੱਲ ਨਹੀਂ, ਮੈਂ ਉਡੀਕ ਕਰ ਰਹੀ ਹਾਂ।",
+  ur: "آپ نے مائیک میوٹ کر دیا ہے، کوئی بات نہیں، میں انتظار کر رہی ہوں۔",
+  or: "ଆପଣ ମାଇକ୍ ମ୍ୟୁଟ୍ କରିଛନ୍ତି, କିଛି ନୁହେଁ, ମୁଁ ଅପେକ୍ଷା କରୁଛି।",
+  as: "আপুনি মাইক মিউট কৰিছে, কোনো সমস্যা নাই, মই অপেক্ষা কৰি আছোঁ।",
+  ne: "तपाईंले माइक म्युट गर्नुभएको छ, समस्या छैन, म पर्खिरहेको छु।",
+};
+
+function mapUiLanguageToBackendLanguage(language: UiLanguage): VoiceLanguage {
+  if (language === "as") {
+    return "bn";
+  }
+
+  if (language === "ne") {
+    return "hi";
+  }
+
+  return language;
+}
+
+function strictLanguageInstruction(language: UiLanguage): string {
   const label = LANGUAGE_LABEL_BY_CODE[language] || "English";
   return `\n\n[System instruction: Reply strictly in ${label} language only, using native script. Do not use Hinglish, transliteration, or mixed language.]`;
 }
@@ -363,7 +442,7 @@ function titleFromMessages(messages: ChatMessage[], fallback = "New chat"): stri
   return truncate(firstUser.text);
 }
 
-function createSession(language: VoiceLanguage): ChatSession {
+function createSession(language: UiLanguage): ChatSession {
   return {
     id: makeId(),
     title: "New chat",
@@ -400,8 +479,8 @@ function readStoredSessions(): ChatSession[] {
       const title = typeof item.title === "string" && item.title.trim().length > 0 ? item.title.trim() : "Saved chat";
       const updatedAt = typeof item.updatedAt === "string" ? item.updatedAt : nowIso();
       const languageRaw = typeof item.language === "string" ? item.language : "en";
-      const language = LANGUAGE_CODES.has(languageRaw as VoiceLanguage)
-        ? (languageRaw as VoiceLanguage)
+      const language = LANGUAGE_CODES.has(languageRaw as UiLanguage)
+        ? (languageRaw as UiLanguage)
         : "en";
 
       const rawMessages = Array.isArray(item.messages) ? (item.messages as Array<Record<string, unknown>>) : [];
@@ -451,8 +530,8 @@ function arrayBufferToBase64(buffer: ArrayBuffer): string {
   return btoa(binary);
 }
 
-function mapSpeechLanguage(language: VoiceLanguage): string {
-  const languageMap: Record<VoiceLanguage, string> = {
+function mapSpeechLanguage(language: UiLanguage): string {
+  const languageMap: Record<UiLanguage, string> = {
     en: "en-US",
     hi: "hi-IN",
     bn: "bn-IN",
@@ -465,6 +544,8 @@ function mapSpeechLanguage(language: VoiceLanguage): string {
     pa: "pa-IN",
     ur: "ur-IN",
     or: "or-IN",
+    as: "as-IN",
+    ne: "ne-NP",
   };
 
   return languageMap[language] || "en-US";
@@ -517,7 +598,7 @@ function scoreBrowserVoice(voice: SpeechSynthesisVoice, targetLang: string): num
   return score;
 }
 
-function pickPreferredBrowserVoice(voices: SpeechSynthesisVoice[], language: VoiceLanguage): SpeechSynthesisVoice | null {
+function pickPreferredBrowserVoice(voices: SpeechSynthesisVoice[], language: UiLanguage): SpeechSynthesisVoice | null {
   if (!voices || voices.length === 0) {
     return null;
   }
@@ -571,7 +652,7 @@ async function playAudio(base64: string): Promise<boolean> {
   }
 }
 
-function speakWithBrowser(text: string, language: VoiceLanguage): Promise<boolean> {
+function speakWithBrowser(text: string, language: UiLanguage): Promise<boolean> {
   if (typeof window === "undefined" || !("speechSynthesis" in window)) {
     return Promise.resolve(false);
   }
@@ -676,7 +757,7 @@ const INITIAL_SESSION = createSession("en");
 export default function ChatPage() {
   const [sessions, setSessions] = useState<ChatSession[]>([INITIAL_SESSION]);
   const [activeSessionId, setActiveSessionId] = useState<string>(INITIAL_SESSION.id);
-  const [language, setLanguage] = useState<VoiceLanguage>(INITIAL_SESSION.language);
+  const [language, setLanguage] = useState<UiLanguage>(INITIAL_SESSION.language);
   const [input, setInput] = useState("");
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
@@ -687,10 +768,12 @@ export default function ChatPage() {
   const [callActive, setCallActive] = useState(false);
   const [callMuted, setCallMuted] = useState(false);
   const [callStatus, setCallStatus] = useState<"idle" | "connecting" | "listening" | "processing" | "speaking" | "muted">("idle");
+  const [voiceTranscriptOpen, setVoiceTranscriptOpen] = useState(false);
 
   const callActiveRef = useRef(false);
   const callMutedRef = useRef(false);
-  const languageRef = useRef<VoiceLanguage>(language);
+  const languageRef = useRef<UiLanguage>(language);
+  const mutedReminderLastSpokenAtRef = useRef(0);
   const consecutiveCallErrorsRef = useRef(0);
   const searchInputRef = useRef<HTMLInputElement | null>(null);
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
@@ -804,6 +887,15 @@ export default function ChatPage() {
   const messages = useMemo(() => activeSession?.messages ?? [], [activeSession]);
   const hasUserMessages = useMemo(() => messages.some((message) => message.role === "user"), [messages]);
   const uiCopy = useMemo(() => UI_COPY_BY_LANGUAGE[language] ?? UI_COPY_BY_LANGUAGE.en, [language]);
+  const voiceTranscriptMessages = useMemo(
+    () =>
+      messages.slice(-10).map((message) => ({
+        id: message.id,
+        from: message.role === "assistant" ? ("ai" as const) : ("user" as const),
+        text: message.text,
+      })),
+    [messages]
+  );
 
   useEffect(() => {
     if (!hasUserMessages) {
@@ -812,6 +904,37 @@ export default function ChatPage() {
 
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
   }, [messages, hasUserMessages]);
+
+  useEffect(() => {
+    if (!callActive || !callMuted) {
+      mutedReminderLastSpokenAtRef.current = 0;
+      return;
+    }
+
+    const speakReminder = async () => {
+      if (!callActiveRef.current || !callMutedRef.current) {
+        return;
+      }
+
+      const now = Date.now();
+      if (now - mutedReminderLastSpokenAtRef.current < 9800) {
+        return;
+      }
+
+      mutedReminderLastSpokenAtRef.current = now;
+      const reminder = MUTED_REMINDER_BY_LANGUAGE[languageRef.current] ?? MUTED_REMINDER_BY_LANGUAGE.en;
+      await speakWithBrowser(reminder, languageRef.current);
+    };
+
+    void speakReminder();
+    const intervalId = window.setInterval(() => {
+      void speakReminder();
+    }, 10000);
+
+    return () => {
+      window.clearInterval(intervalId);
+    };
+  }, [callActive, callMuted]);
 
   const updateActiveSession = useCallback(
     (updater: (session: ChatSession) => ChatSession) => {
@@ -853,7 +976,7 @@ export default function ChatPage() {
   );
 
   const setSessionLanguage = useCallback(
-    (nextLanguage: VoiceLanguage) => {
+    (nextLanguage: UiLanguage) => {
       setLanguage(nextLanguage);
       setSessions((previous) =>
         previous.map((session) =>
@@ -955,6 +1078,8 @@ export default function ChatPage() {
     callActiveRef.current = false;
     setCallActive(false);
     setCallStatus("idle");
+    setVoiceTranscriptOpen(false);
+    mutedReminderLastSpokenAtRef.current = 0;
 
     if (typeof window !== "undefined" && "speechSynthesis" in window) {
       window.speechSynthesis.cancel();
@@ -1017,12 +1142,15 @@ export default function ChatPage() {
     try {
       const result = await queryVoice({
         audioBase64,
-        language: languageRef.current,
+        language: mapUiLanguageToBackendLanguage(languageRef.current),
         userId: activeSessionId,
       });
 
       consecutiveCallErrorsRef.current = 0;
-      if (result.intent === "LANGUAGE_SWITCH" && result.language !== languageRef.current) {
+      if (
+        result.intent === "LANGUAGE_SWITCH" &&
+        result.language !== mapUiLanguageToBackendLanguage(languageRef.current)
+      ) {
         setSessionLanguage(result.language);
       }
 
@@ -1073,8 +1201,10 @@ export default function ChatPage() {
 
     setError("");
     setCallMuted(false);
+    setVoiceTranscriptOpen(false);
     callMutedRef.current = false;
     consecutiveCallErrorsRef.current = 0;
+    mutedReminderLastSpokenAtRef.current = 0;
 
     setCallActive(true);
     callActiveRef.current = true;
@@ -1199,11 +1329,14 @@ export default function ChatPage() {
     try {
       const result = await queryVoice({
         text: `${command}${strictLanguageInstruction(languageRef.current)}`,
-        language: languageRef.current,
+        language: mapUiLanguageToBackendLanguage(languageRef.current),
         userId: activeSession.id,
       });
 
-      if (result.intent === "LANGUAGE_SWITCH" && result.language !== languageRef.current) {
+      if (
+        result.intent === "LANGUAGE_SWITCH" &&
+        result.language !== mapUiLanguageToBackendLanguage(languageRef.current)
+      ) {
         setSessionLanguage(result.language);
       }
       appendMessage(assistantMessageFromResponse(result));
@@ -1282,6 +1415,22 @@ export default function ChatPage() {
       </button>
     </div>
   );
+
+  if (callActive) {
+    return (
+      <VoiceCallPostConnectUI
+        language={language}
+        status={callStatus as VoicePostConnectStatus}
+        isMicMuted={callMuted}
+        isChatOpen={voiceTranscriptOpen}
+        transcriptLines={voiceTranscriptMessages}
+        agentName="Rapid AI"
+        onToggleMic={() => setCallMuted((previous) => !previous)}
+        onToggleChat={() => setVoiceTranscriptOpen((previous) => !previous)}
+        onEndCall={() => stopVoiceCall(uiCopy.voiceCallEnded)}
+      />
+    );
+  }
 
   return (
     <div className="page-shell gpt-chat-page">
@@ -1430,7 +1579,7 @@ export default function ChatPage() {
               <select
                 className="gpt-lang-select"
                 value={language}
-                onChange={(event) => setSessionLanguage(event.target.value as VoiceLanguage)}
+                onChange={(event) => setSessionLanguage(event.target.value as UiLanguage)}
               >
                 {LANGUAGE_OPTIONS.map((option) => (
                   <option key={option.code} value={option.code}>
